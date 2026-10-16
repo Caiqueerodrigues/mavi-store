@@ -1,0 +1,3 @@
+import { z } from 'zod'
+const schema=z.object({name:z.string().trim().min(2).max(160),phone:z.string().trim().max(30).optional().nullable(),nickname:z.string().trim().max(100).optional().nullable(),active:z.boolean().default(true)})
+export default defineEventHandler(async(event)=>{const user=requirePermission(event,'orders:write'),input=await validatedBody(event,schema);const [row]=await db()`INSERT INTO customers(name,phone,nickname,active) VALUES(${input.name},${input.phone||null},${input.nickname||null},${input.active}) RETURNING id,name,phone,nickname,active`;await audit(event,'CUSTOMER_CREATED','customer',row!.id,{name:input.name,actor:user.id});return row})

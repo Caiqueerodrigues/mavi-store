@@ -1,0 +1,39 @@
+import { z } from 'zod'
+
+export const materialSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  supplier: z.string().trim().max(160).nullable().optional(),
+  unit: z.string().trim().min(1).max(20),
+  purchasePrice: z.coerce.number().nonnegative(),
+  purchaseQuantity: z.coerce.number().positive(),
+  active: z.boolean().optional().default(true)
+})
+
+export const channelSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  fixedFee: z.coerce.number().nonnegative(),
+  percentageFee: z.coerce.number().min(0).max(0.99)
+})
+
+export const componentSchema = z.object({
+  materialId: z.coerce.number().int().positive(),
+  quantity: z.coerce.number().positive(),
+  wastePercent: z.coerce.number().min(0).max(5).default(0)
+})
+
+export const productSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  sku: z.string().trim().max(80).nullable().optional(),
+  category: z.string().trim().min(2).max(60),
+  color: z.string().trim().max(120).nullable().optional(),
+  currentPrice: z.coerce.number().nonnegative(),
+  components: z.array(componentSchema).min(1)
+})
+
+export async function validatedBody<T>(event: Parameters<typeof readBody>[0], schema: z.ZodType<T>) {
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({ statusCode: 422, statusMessage: 'Dados inválidos', data: parsed.error.flatten() })
+  }
+  return parsed.data
+}

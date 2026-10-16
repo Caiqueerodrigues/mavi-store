@@ -1,0 +1,279 @@
+openapi: 3.1.0
+info:
+  title: Mavi API
+  version: 2.0.0
+  description: API interna para insumos, fichas técnicas e precificação de calçados. Toda resposta expõe `X-Server-Time`, no fuso `America/Sao_Paulo`, como fonte de horário para o cliente.
+servers:
+  - url: http://localhost:3001/api
+security:
+  - accessCookie: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Verifica a disponibilidade da aplicação
+      responses:
+        '200': { description: Aplicação disponível }
+  /dashboard:
+    get:
+      summary: Retorna indicadores e produtos com menor rentabilidade
+      responses:
+        '200': { description: Resumo calculado, content: { application/json: { schema: { type: object } } } }
+  /materials:
+    get:
+      summary: Lista insumos
+      responses:
+        '200': { description: Lista de insumos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Material' } } } } }
+    post:
+      summary: Cadastra um insumo
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialInput' } } } }
+      responses:
+        '201': { description: Insumo criado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /materials/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Atualiza um insumo e afeta os próximos cálculos
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialInput' } } } }
+      responses:
+        '200': { description: Insumo atualizado }
+        '404': { description: Insumo não encontrado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Exclui um insumo sem uso
+      responses:
+        '204': { description: Excluído }
+        '409': { description: Insumo ainda usado por uma ficha técnica }
+  /products:
+    get:
+      summary: Lista produtos com custos e margens calculados
+      responses:
+        '200': { description: Produtos ativos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Product' } } } } }
+    post:
+      summary: Cria produto e ficha técnica atomicamente
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductInput' } } } }
+      responses:
+        '201': { description: Produto calculado, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /products/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Substitui os dados e a composição do produto
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductInput' } } } }
+      responses:
+        '200': { description: Produto recalculado, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '404': { description: Produto não encontrado }
+    delete:
+      summary: Arquiva um produto
+      responses:
+        '204': { description: Produto arquivado }
+  /channels:
+    get:
+      summary: Lista canais e taxas
+      responses:
+        '200': { description: Canais cadastrados }
+    post:
+      summary: Cadastra canal de venda
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelInput' } } } }
+      responses:
+        '201': { description: Canal criado }
+  /settings:
+    get:
+      summary: Obtém regra padrão de precificação
+      responses:
+        '200': { description: Configuração atual }
+    put:
+      summary: Atualiza lucro alvo e canal padrão
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetProfit, defaultChannelId]
+              properties:
+                targetProfit: { type: number, minimum: 0, example: 5 }
+                defaultChannelId: { type: integer, minimum: 1, example: 1 }
+      responses:
+        '200': { description: Configuração atualizada }
+  /auth/login:
+    post:
+      security: []
+      summary: Autentica um usuário e grava access/refresh tokens em cookies HttpOnly
+      responses:
+        '200': { description: Sessão criada; inclui cookie CSRF legível pelo cliente }
+        '401': { description: Credenciais inválidas }
+        '429': { description: Limite de tentativas excedido }
+  /auth/refresh:
+    post:
+      security: [{ refreshCookie: [] }]
+      summary: Rotaciona a sessão usando o refresh token, válido por no máximo 1 dia
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses:
+        '200': { description: Tokens rotacionados }
+        '401': { description: Sessão expirada ou revogada }
+  /auth/logout:
+    post:
+      summary: Revoga a sessão e remove os cookies
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '204': { description: Sessão encerrada } }
+  /auth/me:
+    get:
+      summary: Retorna o usuário autenticado e seu perfil
+      responses: { '200': { description: Usuário atual }, '401': { description: Não autenticado } }
+  /auth/change-password:
+    post:
+      summary: Troca a senha do próprio usuário e mantém a sessão atual
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '200': { description: Senha alterada e sessão mantida }, '422': { description: Senha atual incorreta ou nova senha fraca } }
+  /auth/profile:
+    put:
+      summary: Atualiza nome e e-mail do usuário autenticado
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '200': { description: Perfil atualizado e sessão mantida }, '409': { description: E-mail já cadastrado }, '422': { description: Dados inválidos } }
+  /users:
+    get:
+      summary: Lista usuários; requer perfil Administrador
+      responses: { '200': { description: Usuários ativos e inativos } }
+    post:
+      summary: Cria usuário sem autocadastro; requer Administrador
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '201': { description: Usuário criado com troca obrigatória de senha }, '409': { description: E-mail já cadastrado } }
+  /users/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Atualiza perfil, status ou redefine senha; requer Administrador
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '200': { description: Usuário atualizado } }
+    delete:
+      summary: Exclui usuário logicamente e revoga sessões; requer Administrador
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '204': { description: Usuário removido } }
+  /orders:
+    get:
+      summary: Lista pedidos não excluídos
+      responses: { '200': { description: Pedidos encontrados } }
+    post:
+      summary: Cadastra um pedido e sua grade
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OrderInput' } } } }
+      responses: { '201': { description: Pedido criado }, '409': { description: Número duplicado } }
+  /orders/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Edita um pedido
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OrderInput' } } } }
+      responses: { '200': { description: Pedido atualizado } }
+    delete:
+      summary: Executa soft delete do pedido
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      responses: { '204': { description: Pedido removido logicamente } }
+  /orders/{id}/clone:
+    post:
+      summary: Clona dados e grade em um novo pedido pendente
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/Csrf' }]
+      responses: { '201': { description: Clone criado } }
+  /orders/report.pdf:
+    get:
+      summary: Gera o relatório PDF server-side e registra a geração na auditoria
+      parameters:
+        - { name: ids, in: query, schema: { type: string }, description: IDs separados por vírgula; vazio gera todos }
+      responses:
+        '200': { description: PDF, content: { application/pdf: { schema: { type: string, format: binary } } } }
+  /audit:
+    get:
+      summary: Lista paginada dos registros imutáveis de auditoria
+      responses: { '200': { description: Eventos mais recentes } }
+components:
+  headers:
+    ServerTime:
+      description: Data e hora corrente do servidor em Brasília (`America/Sao_Paulo`).
+      schema: { type: string, format: date-time, example: '2026-10-16T14:30:00.000-03:00' }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    Csrf: { name: x-csrf-token, in: header, required: true, schema: { type: string }, description: Mesmo valor do cookie mavi_csrf }
+  securitySchemes:
+    accessCookie: { type: apiKey, in: cookie, name: mavi_access }
+    refreshCookie: { type: apiKey, in: cookie, name: mavi_refresh }
+  responses:
+    ValidationError: { description: Corpo inválido; os campos são retornados em `data.fieldErrors` }
+  schemas:
+    MaterialInput:
+      type: object
+      required: [name, unit, purchasePrice, purchaseQuantity]
+      properties:
+        name: { type: string, minLength: 2, example: Manta strass }
+        supplier: { type: [string, 'null'], example: Compofram }
+        unit: { type: string, example: MT }
+        purchasePrice: { type: number, minimum: 0, example: 16 }
+        purchaseQuantity: { type: number, exclusiveMinimum: 0, example: 1 }
+        active: { type: boolean, default: true }
+    Material:
+      allOf:
+        - { $ref: '#/components/schemas/MaterialInput' }
+        - type: object
+          required: [id, unitCost]
+          properties:
+            id: { type: integer }
+            unitCost: { type: number, description: purchasePrice / purchaseQuantity }
+    ComponentInput:
+      type: object
+      required: [materialId, quantity]
+      properties:
+        materialId: { type: integer, minimum: 1 }
+        quantity: { type: number, exclusiveMinimum: 0 }
+        wastePercent: { type: number, minimum: 0, default: 0, description: Fração decimal; 0.05 representa 5% }
+    ProductInput:
+      type: object
+      required: [name, category, currentPrice, components]
+      properties:
+        name: { type: string, minLength: 2 }
+        sku: { type: [string, 'null'] }
+        category: { type: string, example: Sandália }
+        color: { type: [string, 'null'] }
+        currentPrice: { type: number, minimum: 0 }
+        components: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ComponentInput' } }
+    Product:
+      allOf:
+        - { $ref: '#/components/schemas/ProductInput' }
+        - type: object
+          required: [id, productionCost, minimumPrice, expectedProfit, currentProfit]
+          properties:
+            id: { type: integer }
+            productionCost: { type: number }
+            minimumPrice: { type: number }
+            expectedProfit: { type: number }
+            currentProfit: { type: number }
+    ChannelInput:
+      type: object
+      required: [name, fixedFee, percentageFee]
+      properties:
+        name: { type: string, minLength: 2 }
+        fixedFee: { type: number, minimum: 0 }
+        percentageFee: { type: number, minimum: 0, maximum: 0.99, description: Fração decimal; 0.20 representa 20% }
+    OrderInput:
+      type: object
+      required: [orderNumber, customerId, serviceTypeId, productDescription, orderDate, quantity, unitPrice, paymentStatus, status]
+      properties:
+        orderNumber: { type: string, maxLength: 40, example: '4443' }
+        customerId: { type: integer, minimum: 1 }
+        customerName: { type: string, readOnly: true, example: Caique }
+        serviceTypeId: { type: integer, minimum: 1 }
+        orderType: { type: string, readOnly: true, example: CORTE }
+        productDescription: { type: string, example: PALMILHA INFANTIL E.V.A }
+        material: { type: [string, 'null'], example: EVA forrado }
+        color: { type: [string, 'null'], example: PRETO }
+        orderDate: { type: string, format: date }
+        dueDate: { type: [string, 'null'], format: date }
+        quantity: { type: number, exclusiveMinimum: 0 }
+        unitPrice: { type: number, minimum: 0 }
+        paidAmount: { type: number, minimum: 0 }
+        paymentStatus: { type: string, enum: [pending, partial, paid, refunded] }
+        status: { type: string, enum: [pending, in_production, ready, delivered, completed, cancelled] }
+        sizes:
+          type: array
+          items:
+            type: object
+            required: [size, quantity]
+            properties: { size: { type: string }, quantity: { type: number, exclusiveMinimum: 0 } }

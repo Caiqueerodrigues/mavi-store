@@ -1,0 +1,36 @@
+{
+  "name": "mavi",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "nuxt dev --host 0.0.0.0",
+    "build": "nuxt build",
+    "preview": "nuxt preview --host 0.0.0.0",
+    "typecheck": "nuxt typecheck",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@nuxt/icon": "^1.15.0",
+    "bcryptjs": "^3.0.2",
+    "drizzle-orm": "^0.45.4",
+    "jose": "^6.1.0",
+    "nuxt": "^4.0.0",
+    "pdf-lib": "^1.17.1",
+    "postgres": "^3.4.7",
+    "vue": "^3.5.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^5.9.0",
+    "vue-tsc": "^3.0.0"
+  }
+}
