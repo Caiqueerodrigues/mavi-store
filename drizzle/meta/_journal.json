@@ -22,6 +22,27 @@
       "when": 1792181740550,
       "tag": "0002_seed_caique_user",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792182095318,
+      "tag": "0003_natural_santa_claus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792182531250,
+      "tag": "0004_seed_shopee_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792182707022,
+      "tag": "0005_sequential_order_number",
+      "breakpoints": true
     }
   ]
 }

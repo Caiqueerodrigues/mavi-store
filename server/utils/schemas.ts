@@ -12,7 +12,8 @@ export const materialSchema = z.object({
 export const channelSchema = z.object({
   name: z.string().trim().min(2).max(100),
   fixedFee: z.coerce.number().nonnegative(),
-  percentageFee: z.coerce.number().min(0).max(0.99)
+  percentageFee: z.coerce.number().min(0).max(0.99),
+  active: z.boolean().optional().default(true)
 })
 
 export const componentSchema = z.object({

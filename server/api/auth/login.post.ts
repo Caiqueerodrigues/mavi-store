@@ -21,8 +21,8 @@ export default defineEventHandler(async (event) => {
     attempts.set(ip, { count: 0, resetAt: monotonicNow + 15 * 60_000 });
   const input = await validatedBody(event, schema);
   const [row] =
-    await db()`SELECT id, name, email, role, password_hash, must_change_password FROM users
-    WHERE LOWER(email)=LOWER(${input.email}) AND active=TRUE AND deleted_at IS NULL`;
+    await db()`SELECT id, name, email, role, password_hash, active, must_change_password FROM users
+    WHERE LOWER(email)=LOWER(${input.email}) AND deleted_at IS NULL`;
   if (!row || !(await compare(input.password, row.passwordHash))) {
     attempts.get(ip)!.count++;
     await audit(event, "AUTH_LOGIN_FAILED", "auth", input.email, {
@@ -31,6 +31,15 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 401,
       statusMessage: "E-mail ou senha inválidos",
+    });
+  }
+  if (!row.active) {
+    await audit(event, "AUTH_LOGIN_BLOCKED", "auth", row.id, {
+      reason: "inactive_user",
+    });
+    throw createError({
+      statusCode: 403,
+      statusMessage: "Usuário inativo. Procure um administrador para liberar seu acesso.",
     });
   }
   attempts.delete(ip);

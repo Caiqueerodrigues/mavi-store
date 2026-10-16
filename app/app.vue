@@ -749,10 +749,120 @@ async function saveMaterial() {
   dashboard.value = await api("/api/dashboard");
   toast("Insumo salvo.");
 }
+const productModal = ref(false),
+  productForm = reactive<any>({
+    id: 0,
+    name: "",
+    sku: "",
+    category: "",
+    color: "",
+    currentPrice: 0,
+    components: [],
+  });
+const productCostPreview = computed(() =>
+  productForm.components.reduce((total: number, component: any) => {
+    const material = materials.value.find((item) => item.id === component.materialId);
+    return total + (material?.unitCost || 0) * component.quantity * (1 + component.wastePercent / 100);
+  }, 0),
+);
+function addProductComponent() {
+  productForm.components.push({ materialId: null, quantity: 1, wastePercent: 0 });
+}
+function editProduct(item?: Product) {
+  Object.assign(
+    productForm,
+    item
+      ? {
+          id: item.id,
+          name: item.name,
+          sku: item.sku || "",
+          category: item.category,
+          color: item.color || "",
+          currentPrice: item.currentPrice,
+          components: item.components.map((component) => ({
+            materialId: component.materialId,
+            quantity: component.quantity,
+            wastePercent: component.wastePercent * 100,
+          })),
+        }
+      : {
+          id: 0,
+          name: "",
+          sku: "",
+          category: "",
+          color: "",
+          currentPrice: 0,
+          components: [{ materialId: null, quantity: 1, wastePercent: 0 }],
+        },
+  );
+  productModal.value = true;
+}
+async function saveProduct() {
+  busy.value = true;
+  try {
+    await api(productForm.id ? `/api/products/${productForm.id}` : "/api/products", {
+      method: productForm.id ? "PUT" : "POST",
+      body: {
+        ...productForm,
+        components: productForm.components.map((component: any) => ({
+          ...component,
+          wastePercent: component.wastePercent / 100,
+        })),
+      },
+    });
+    productModal.value = false;
+    products.value = await api("/api/products");
+    dashboard.value = await api("/api/dashboard");
+    toast("Produto salvo.");
+  } catch (e: any) {
+    toast(e?.data?.statusMessage || "Não foi possível salvar o produto");
+  } finally {
+    busy.value = false;
+  }
+}
 async function saveSettings() {
   await api("/api/settings", { method: "PUT", body: settings.value });
   dashboard.value = await api("/api/dashboard");
   toast("Precificação atualizada.");
+}
+const channelModal = ref(false),
+  channelForm = reactive({ id: 0, name: "", percentageFee: 0, fixedFee: 0, active: true });
+const selectableChannels = computed(() =>
+  channels.value.filter(
+    (channel) => channel.active || channel.id === settings.value?.defaultChannelId,
+  ),
+);
+function editChannel(item?: Channel) {
+  Object.assign(
+    channelForm,
+    item
+      ? { ...item, percentageFee: item.percentageFee * 100 }
+      : { id: 0, name: "", percentageFee: 0, fixedFee: 0, active: true },
+  );
+  channelModal.value = true;
+}
+async function saveChannel() {
+  busy.value = true;
+  try {
+    await api(channelForm.id ? `/api/channels/${channelForm.id}` : "/api/channels", {
+      method: channelForm.id ? "PUT" : "POST",
+      body: {
+        name: channelForm.name,
+        percentageFee: channelForm.percentageFee / 100,
+        fixedFee: channelForm.fixedFee,
+        active: channelForm.active,
+      },
+    });
+    channelModal.value = false;
+    channels.value = await api("/api/channels");
+    products.value = await api("/api/products");
+    dashboard.value = await api("/api/dashboard");
+    toast("Canal de venda salvo.");
+  } catch (e: any) {
+    toast(e?.data?.statusMessage || "Não foi possível salvar o canal");
+  } finally {
+    busy.value = false;
+  }
 }
 const customerModal = ref(false),
   customerForm = reactive<any>({
@@ -1229,6 +1339,7 @@ async function saveServiceType() {
             <h2>Produtos e margens</h2>
             <p>Custos recalculados a partir dos insumos.</p>
           </div>
+          <div class="head-actions">
           <label class="category-filter"
             >Categoria<select v-model="productCategory">
               <option value="">Todas as categorias</option>
@@ -1239,8 +1350,9 @@ async function saveServiceType() {
               >
                 {{ category }}
               </option>
-            </select></label
-          >
+            </select></label>
+          <button class="button" @click="editProduct()"><Icon name="lucide:plus" />Novo produto</button>
+          </div>
         </div>
         <div v-if="filteredProducts.length" class="cards-grid">
           <article
@@ -1250,6 +1362,9 @@ async function saveServiceType() {
           >
             <div class="card-top">
               <span class="category">{{ p.category }}</span>
+              <button class="edit-button" title="Editar produto" @click="editProduct(p)">
+                <Icon name="lucide:pencil" /><span>Editar</span>
+              </button>
             </div>
             <h3>{{ p.name }}</h3>
             <p>{{ p.color || "Sem cor" }} · {{ p.sku || "Sem SKU" }}</p>
@@ -1317,8 +1432,8 @@ async function saveServiceType() {
                   <strong>{{ money(m.unitCost) }} / {{ m.unit }}</strong>
                 </td>
                 <td>
-                  <button class="tiny-button" @click="editMaterial(m)">
-                    <Icon name="lucide:pencil" />
+                  <button class="edit-button" title="Editar insumo" @click="editMaterial(m)">
+                    <Icon name="lucide:pencil" /><span>Editar</span>
                   </button>
                 </td>
               </tr>
@@ -1370,7 +1485,7 @@ async function saveServiceType() {
             </div>
             <Icon name="lucide:wrench" class="panel-icon" />
           </div>
-          <table>
+          <table v-if="serviceTypes.length" class="service-types-table">
             <thead>
               <tr>
                 <th>Tipo de serviço</th>
@@ -1381,13 +1496,13 @@ async function saveServiceType() {
             </thead>
             <tbody>
               <tr v-for="serviceType in serviceTypes" :key="serviceType.id">
-                <td>
+                <td data-label="Tipo de serviço">
                   <strong>{{ serviceType.name }}</strong>
                 </td>
-                <td>
+                <td data-label="Preço base/mínimo">
                   <strong>{{ money(serviceType.basePrice) }}</strong>
                 </td>
-                <td>
+                <td data-label="Situação">
                   <span
                     :class="[
                       'status-badge',
@@ -1396,7 +1511,7 @@ async function saveServiceType() {
                     >{{ serviceType.active ? "Ativo" : "Inativo" }}</span
                   >
                 </td>
-                <td>
+                <td class="service-row-action">
                   <button
                     class="tiny-button"
                     title="Editar"
@@ -1412,23 +1527,20 @@ async function saveServiceType() {
             Nenhum tipo de serviço cadastrado.
           </div>
         </div>
-        <form
-          v-else-if="settings"
-          class="panel form-panel settings-single"
-          @submit.prevent="saveSettings"
-        >
+        <div v-else-if="settings" class="pricing-layout">
+        <form class="panel form-panel settings-single" @submit.prevent="saveSettings">
           <div class="panel-head">
             <div>
               <span class="eyebrow">Precificação</span>
-              <h3>Canal e lucro alvo</h3>
+              <h3>Regra padrão</h3>
             </div>
             <Icon name="lucide:calculator" class="panel-icon" />
           </div>
           <label
             >Canal padrão<select v-model.number="settings.defaultChannelId">
-              <option v-for="c in channels" :key="c.id" :value="c.id">
-                {{ c.name }} — {{ (c.percentageFee * 100).toFixed(0) }}% +
-                {{ money(c.fixedFee) }}
+              <option v-for="c in selectableChannels" :key="c.id" :value="c.id">
+                {{ c.name }} — {{ (c.percentageFee * 100).toFixed(2) }}% +
+                {{ money(c.fixedFee) }} por unidade
               </option>
             </select></label
           >
@@ -1441,6 +1553,24 @@ async function saveServiceType() {
           /></label>
           <button class="button">Salvar regra</button>
         </form>
+        <div class="panel channels-panel">
+          <div class="panel-head">
+            <div><span class="eyebrow">Canais de venda</span><h3>Marketplaces e taxas</h3></div>
+            <button class="button" @click="editChannel()"><Icon name="lucide:plus" />Novo canal</button>
+          </div>
+          <p class="panel-description">Configure a comissão percentual e a tarifa fixa cobrada por unidade.</p>
+          <div class="table-wrap"><table class="channels-table">
+            <thead><tr><th>Canal</th><th>Comissão</th><th>Tarifa por unidade</th><th>Status</th><th></th></tr></thead>
+            <tbody><tr v-for="channel in channels" :key="channel.id">
+              <td data-label="Canal"><strong>{{ channel.name }}</strong></td>
+              <td data-label="Comissão">{{ (channel.percentageFee * 100).toFixed(2) }}%</td>
+              <td data-label="Tarifa por unidade">{{ money(channel.fixedFee) }}</td>
+              <td data-label="Status"><span :class="['status-badge', channel.active ? 'ready' : 'cancelled']">{{ channel.active ? "Ativo" : "Inativo" }}</span></td>
+              <td class="channel-row-action"><button class="edit-button" @click="editChannel(channel)"><Icon name="lucide:pencil" /><span>Editar</span></button></td>
+            </tr></tbody>
+          </table></div>
+        </div>
+        </div>
       </section>
       <section v-else-if="tab === 'users'" class="content">
         <div class="section-head">
@@ -1557,6 +1687,8 @@ async function saveServiceType() {
         orderModal ||
         customerModal ||
         serviceTypeModal ||
+        channelModal ||
+        productModal ||
         userModal ||
         materialModal ||
         profileModal ||
@@ -1565,9 +1697,12 @@ async function saveServiceType() {
       class="modal-backdrop"
       @click.self="
         !changeModal &&
+        !orderModal &&
         (orderModal =
           customerModal =
           serviceTypeModal =
+          channelModal =
+          productModal =
           userModal =
           materialModal =
           profileModal =
@@ -1585,7 +1720,7 @@ async function saveServiceType() {
           </button>
         </div>
         <div class="three-cols">
-          <label>Número<input v-model="orderForm.orderNumber" required /></label
+          <label>Número<input v-model="orderForm.orderNumber" disabled placeholder="Gerado automaticamente" /></label
           ><label
             >Cliente<select v-model.number="orderForm.customerId" required>
               <option :value="null" disabled>Selecione</option>
@@ -1643,7 +1778,7 @@ async function saveServiceType() {
             </select></label
           >
         </div>
-        <div class="three-cols">
+        <div class="order-values">
           <label
             >Quantidade<input
               v-model.number="orderForm.quantity"
@@ -1664,6 +1799,12 @@ async function saveServiceType() {
               type="text"
               inputmode="numeric"
               @input="currencyInput($event, orderForm, 'paidAmount')"
+          /></label
+          ><label
+            >Valor total<input
+              :value="money(Number(orderForm.quantity || 0) * Number(orderForm.unitPrice || 0))"
+              type="text"
+              disabled
           /></label>
         </div>
         <label
@@ -1871,7 +2012,7 @@ async function saveServiceType() {
           ></label
         ><label v-if="userForm.id" class="check"
           ><input v-model="userForm.active" type="checkbox" />Usuário
-          ativo</label
+          {{ userForm.active ? "ativo" : "inativo" }}</label
         >
         <div class="modal-actions">
           <button type="button" class="button ghost" @click="userModal = false">
@@ -1923,6 +2064,31 @@ async function saveServiceType() {
             Cancelar</button
           ><button class="button" :disabled="busy">Salvar perfil</button>
         </div>
+      </form>
+      <form v-else-if="productModal" class="modal wide" @submit.prevent="saveProduct">
+        <div class="modal-head">
+          <div><span class="eyebrow">Ficha técnica</span><h2>{{ productForm.id ? "Editar produto" : "Novo produto" }}</h2></div>
+          <button type="button" class="tiny-button" @click="productModal = false"><Icon name="lucide:x" /></button>
+        </div>
+        <div class="two-cols">
+          <label>Nome<input v-model="productForm.name" required maxlength="160" /></label>
+          <label>SKU<input v-model="productForm.sku" maxlength="80" /></label>
+          <label>Categoria<input v-model="productForm.category" required maxlength="60" list="product-categories" /><datalist id="product-categories"><option v-for="category in productCategories" :key="category" :value="category" /></datalist></label>
+          <label>Cor<input v-model="productForm.color" maxlength="120" /></label>
+        </div>
+        <label>Preço atual<input :value="money(productForm.currentPrice)" type="text" inputmode="numeric" @input="currencyInput($event, productForm, 'currentPrice')" /></label>
+        <div class="components-head"><div><span class="eyebrow">Composição</span><h3>Insumos do produto</h3></div><button type="button" class="button secondary" @click="addProductComponent"><Icon name="lucide:plus" />Adicionar insumo</button></div>
+        <div class="components">
+          <div v-for="(component, index) in productForm.components" :key="index" class="component-row">
+            <label>Insumo<select v-model.number="component.materialId" required><option :value="null" disabled>Selecione</option><option v-for="material in materials.filter((item) => item.active || item.id === component.materialId)" :key="material.id" :value="material.id">{{ material.name }} ({{ material.unit }})</option></select></label>
+            <label>Quantidade<input v-model.number="component.quantity" type="number" min="0.0001" step="0.0001" required /></label>
+            <label>Perda (%)<input v-model.number="component.wastePercent" type="number" min="0" max="500" step="0.01" required /></label>
+            <strong>{{ money((materials.find((item) => item.id === component.materialId)?.unitCost || 0) * component.quantity * (1 + component.wastePercent / 100)) }}</strong>
+            <button type="button" class="tiny-button danger-text" title="Remover insumo" :disabled="productForm.components.length === 1" @click="productForm.components.splice(index, 1)"><Icon name="lucide:trash-2" /></button>
+          </div>
+        </div>
+        <div class="product-total"><span>Custo estimado de produção</span><strong>{{ money(productCostPreview) }}</strong></div>
+        <div class="modal-actions"><button type="button" class="button ghost" @click="productModal = false">Cancelar</button><button class="button" :disabled="busy">Salvar produto</button></div>
       </form>
       <form
         v-else-if="materialModal"
@@ -1978,6 +2144,19 @@ async function saveServiceType() {
             Cancelar</button
           ><button class="button">Salvar</button>
         </div>
+      </form>
+      <form v-else-if="channelModal" class="modal" @submit.prevent="saveChannel">
+        <div class="modal-head">
+          <div><span class="eyebrow">Precificação</span><h2>{{ channelForm.id ? "Editar canal" : "Novo canal" }}</h2></div>
+          <button type="button" class="tiny-button" @click="channelModal = false"><Icon name="lucide:x" /></button>
+        </div>
+        <label>Nome<input v-model="channelForm.name" required maxlength="100" /></label>
+        <div class="two-cols">
+          <label>Comissão (%)<input v-model.number="channelForm.percentageFee" type="number" min="0" max="99.99" step="0.01" required /></label>
+          <label>Tarifa por unidade<input :value="money(channelForm.fixedFee)" type="text" inputmode="numeric" @input="currencyInput($event, channelForm, 'fixedFee')" /></label>
+        </div>
+        <label class="check"><input v-model="channelForm.active" type="checkbox" />Canal ativo</label>
+        <div class="modal-actions"><button type="button" class="button ghost" @click="channelModal = false">Cancelar</button><button class="button" :disabled="busy">Salvar canal</button></div>
       </form>
       <form v-else class="modal secure-modal" @submit.prevent="changePassword">
         <img src="/assets/logo-mavi.png" alt="Mavi" /><span

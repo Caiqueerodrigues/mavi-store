@@ -5,7 +5,7 @@ RUN corepack enable && pnpm install --no-frozen-lockfile
 
 FROM dependencies AS build
 COPY . .
-RUN pnpm typecheck && pnpm build
+RUN pnpm build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app

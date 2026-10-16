@@ -39,4 +39,5 @@ export type Channel = {
   name: string
   fixedFee: number
   percentageFee: number
+  active: boolean
 }

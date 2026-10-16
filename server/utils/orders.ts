@@ -17,6 +17,8 @@ export const orderSchema = z.object({
   withdrawalDate: z.string().date().nullable().optional(), withdrawnBy: z.string().trim().max(160).nullable().optional(), notes: z.string().max(2000).nullable().optional()
 })
 
+export const orderCreateSchema = orderSchema.omit({ orderNumber: true })
+
 export function mapOrder(row: any) {
   return { id: row.id, orderNumber: row.orderNumber, customerId: row.customerId, customerName: row.customerName, serviceTypeId: row.serviceTypeId, orderType: row.orderType,
     productDescription: row.productDescription, material: row.material, color: row.color, orderDate: row.orderDate,
