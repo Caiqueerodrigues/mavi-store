@@ -176,11 +176,13 @@ paths:
       responses: { '201': { description: Clone criado } }
   /orders/report.pdf:
     get:
+      description: When `ids` is provided, generates a PDF for up to 500 selected orders. Omit it to include all orders. Includes client and payment details in Brazilian Portuguese.
       summary: Gera o relatório PDF server-side e registra a geração na auditoria
       parameters:
         - { name: ids, in: query, schema: { type: string }, description: IDs separados por vírgula; vazio gera todos }
       responses:
         '200': { description: PDF, content: { application/pdf: { schema: { type: string, format: binary } } } }
+        '400': { description: IDs inválidos ou mais de 500 pedidos selecionados }
   /audit:
     get:
       summary: Lista paginada dos registros imutáveis de auditoria

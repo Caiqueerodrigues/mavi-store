@@ -8,13 +8,47 @@ import {
   type PDFFont,
 } from "pdf-lib";
 
-const money = (value: number) => `R$ ${value.toFixed(2).replace(".", ",")}`;
+const money = (value: number) =>
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
 const date = (value: string | null) => formatBrasiliaDate(value);
+const pdfStatusLabels: Record<string, string> = {
+  pending: "Pendente",
+  in_production: "Em produção",
+  ready: "Pronto",
+  delivered: "Entregue",
+  completed: "Concluído",
+  cancelled: "Cancelado",
+  partial: "Parcial",
+  paid: "Pago",
+  refunded: "Estornado",
+};
 const clean = (value: unknown) =>
   String(value ?? "")
     .replace(/[–—]/g, "-")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(
+      /^(pending|in_production|ready|delivered|completed|cancelled|partial|paid|refunded)$/,
+      (status) => pdfStatusLabels[status] || status,
+    );
+
+const productionStatusLabels: Record<string, string> = {
+  pending: "Pendente",
+  in_production: "Em produção",
+  ready: "Pronto",
+  delivered: "Entregue",
+  completed: "Concluído",
+  cancelled: "Cancelado",
+};
+const paymentStatusLabels: Record<string, string> = {
+  pending: "Pendente",
+  partial: "Parcial",
+  paid: "Pago",
+  refunded: "Estornado",
+};
 
 function wrap(text: string, font: PDFFont, size: number, width: number) {
   const words = clean(text).split(" "),
@@ -37,14 +71,27 @@ export default defineEventHandler(async (event) => {
     (event.context as any).serverTime || (await brasiliaNow()),
   );
   const query = getQuery(event),
-    ids = String(query.ids || "")
-      .split(",")
-      .map(Number)
-      .filter(Number.isFinite),
+    idsParam = String(query.ids || "").trim(),
     sql = db();
-  const filter = ids.length ? sql`AND id IN ${sql(ids)}` : sql``;
+  let ids: number[] = [];
+  if (idsParam) {
+    const parsedIds = idsParam.split(",").map(Number);
+    if (
+      parsedIds.length > 500 ||
+      parsedIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+    ) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: "Informe até 500 IDs de pedidos válidos",
+      });
+    }
+    ids = [...new Set(parsedIds)];
+  }
+  const filter = idsParam ? sql`AND o.id IN ${sql(ids)}` : sql``;
   const orders =
-    await sql`SELECT * FROM orders WHERE deleted_at IS NULL ${filter} ORDER BY customer_name, order_date, id`;
+    await sql`SELECT o.*, c.phone AS customer_phone, c.nickname AS customer_nickname
+      FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
+      WHERE o.deleted_at IS NULL ${filter} ORDER BY o.customer_name, o.order_date, o.id`;
   if (!orders.length)
     throw createError({
       statusCode: 404,
@@ -147,12 +194,40 @@ export default defineEventHandler(async (event) => {
 
   for (const row of orders) {
     const description = wrap(row.productDescription, bold, 10, 485),
-      sizes = Array.isArray(row.sizes) ? row.sizes : [];
+      sizes = Array.isArray(row.sizes) ? row.sizes : [],
+      sizeText = sizes
+        .map((item: any) => `${clean(item.size)}: ${Number(item.quantity)}`)
+        .join("    "),
+      sizeLines = sizeText ? wrap(sizeText, regular, 8.5, 485) : [],
+      customerName = clean(row.customerName),
+      customerDisplay = row.customerNickname
+        ? `${customerName} (${clean(row.customerNickname)})`
+        : customerName,
+      customerLines = wrap(
+        `Cliente: ${customerDisplay} | Telefone: ${clean(row.customerPhone || "Não informado")}`,
+        regular,
+        8.5,
+        485,
+      ),
+      orderTotal = Number(row.quantity) * Number(row.unitPrice),
+      paidAmount = Number(row.paidAmount),
+      paymentLines = wrap(
+        `Pagamento: ${paymentStatusLabels[row.paymentStatus] || "Não informado"} | Pago: ${money(paidAmount)} | Saldo: ${money(orderTotal - paidAmount)}`,
+        regular,
+        8.5,
+        485,
+      ),
+      notesLines = row.notes
+        ? wrap(`Observações: ${row.notes}`, regular, 8, 485)
+        : [];
     const height =
-      102 +
+      132 +
       (description.length - 1) * 12 +
-      (sizes.length ? 30 : 0) +
-      (row.notes ? 18 : 0);
+      (customerLines.length - 1) * 11 +
+      (paymentLines.length - 1) * 11 +
+      sizeLines.length * 11 +
+      notesLines.length * 11 +
+      (row.withdrawalDate || row.withdrawnBy ? 14 : 0);
     if (y - height < 42) newPage();
     page!.drawRectangle({
       x: 38,
@@ -186,6 +261,17 @@ export default defineEventHandler(async (event) => {
       { x: 48, y: innerY, size: 8.5, font: regular, color: charcoal },
     );
     innerY -= 16;
+    customerLines.forEach((line) => {
+      page!.drawText(line, {
+        x: 48,
+        y: innerY,
+        size: 8.5,
+        font: regular,
+        color: charcoal,
+      });
+      innerY -= 11;
+    });
+    innerY -= 5;
     description.forEach((line) => {
       page!.drawText(line, {
         x: 48,
@@ -205,27 +291,63 @@ export default defineEventHandler(async (event) => {
       `${Number(row.quantity)} pares/metros  •  ${money(Number(row.unitPrice))} por unidade  •  Total ${money(Number(row.quantity) * Number(row.unitPrice))}`,
       { x: 48, y: innerY, size: 9, font: bold, color: red },
     );
-    innerY -= 18;
-    if (sizes.length) {
-      const sizeText = sizes
-        .map((item: any) => `${clean(item.size)}: ${Number(item.quantity)}`)
-        .join("    ");
-      wrap(sizeText, regular, 8.5, 485).forEach((line) => {
-        page!.drawText(line, {
-          x: 48,
-          y: innerY,
-          size: 8.5,
-          font: regular,
-          color: charcoal,
-        });
-        innerY -= 11;
+    innerY -= 15;
+    const paymentColor = row.paymentStatus === "paid"
+      ? green
+      : row.paymentStatus === "refunded"
+        ? charcoal
+        : row.paymentStatus === "partial"
+          ? rgb(0.66, 0.39, 0.05)
+          : red;
+    page!.drawRectangle({
+      x: 44,
+      y: innerY - paymentLines.length * 11 + 3,
+      width: 507,
+      height: paymentLines.length * 11 + 7,
+      color: row.paymentStatus === "paid"
+        ? rgb(0.91, 0.96, 0.92)
+        : row.paymentStatus === "partial"
+          ? rgb(1, 0.97, 0.88)
+          : row.paymentStatus === "refunded"
+            ? rgb(0.95, 0.95, 0.95)
+            : rgb(1, 0.93, 0.93),
+    });
+    paymentLines.forEach((line) => {
+      page!.drawText(line, {
+        x: 48,
+        y: innerY,
+        size: 8.5,
+        font: regular,
+        color: paymentColor,
       });
-    }
+      innerY -= 11;
+    });
+    sizeLines.forEach((line) => {
+      page!.drawText(line, {
+        x: 48,
+        y: innerY,
+        size: 8.5,
+        font: regular,
+        color: charcoal,
+      });
+      innerY -= 11;
+    });
     if (row.withdrawalDate || row.withdrawnBy)
       page!.drawText(
         `Retirada: ${date(row.withdrawalDate)}  •  Por: ${clean(row.withdrawnBy || "não informado")}`,
         { x: 48, y: innerY, size: 8, font: regular, color: charcoal },
       );
+    if (row.withdrawalDate || row.withdrawnBy) innerY -= 12;
+    notesLines.forEach((line) => {
+      page!.drawText(line, {
+        x: 48,
+        y: innerY,
+        size: 8,
+        font: regular,
+        color: charcoal,
+      });
+      innerY -= 11;
+    });
     y -= height + 12;
   }
   const pages = pdf.getPages();
