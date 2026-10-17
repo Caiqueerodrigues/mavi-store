@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const orderSchema = z.object({
+const orderBaseSchema = z.object({
   orderNumber: z.string().trim().min(1).max(40),
   customerId: z.coerce.number().int().positive(),
   customerName: z.string().trim().min(2).max(160),
@@ -17,7 +17,15 @@ export const orderSchema = z.object({
   withdrawalDate: z.string().date().nullable().optional(), withdrawnBy: z.string().trim().max(160).nullable().optional(), notes: z.string().max(2000).nullable().optional()
 })
 
-export const orderCreateSchema = orderSchema.omit({ orderNumber: true })
+function validateGrade(input: { quantity: number, sizes: Array<{ quantity: number }> }, context: z.RefinementCtx) {
+  const gradeQuantity = input.sizes.reduce((sum, item) => sum + Number(item.quantity), 0)
+  if (Math.abs(gradeQuantity - Number(input.quantity)) > 0.0001) {
+    context.addIssue({ code: 'custom', path: ['sizes'], message: 'A soma das quantidades da grade deve ser igual à quantidade do pedido' })
+  }
+}
+
+export const orderSchema = orderBaseSchema.superRefine(validateGrade)
+export const orderCreateSchema = orderBaseSchema.omit({ orderNumber: true }).superRefine(validateGrade)
 
 export function mapOrder(row: any) {
   return { id: row.id, orderNumber: row.orderNumber, customerId: row.customerId, customerName: row.customerName, serviceTypeId: row.serviceTypeId, orderType: row.orderType,

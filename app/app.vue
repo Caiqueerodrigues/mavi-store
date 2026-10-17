@@ -64,6 +64,8 @@ const dashboard = ref<any>(null),
   settings = ref<any>(null),
   users = ref<User[]>([]),
   auditData = ref<any>({ items: [], total: 0 });
+const dashboardFilters = reactive({ from: "", to: "" }),
+  orderFilters = reactive({ from: "", to: "", status: "", paymentStatus: "" });
 const productCategory = ref(""),
   parameterTab = ref<"services" | "pricing">("services"),
   productCategories = computed(() =>
@@ -253,7 +255,17 @@ function csrf() {
 }
 function syncServerTime(headers: Headers) {
   const value = headers.get("x-server-time");
-  if (value) serverTime.value = value;
+  if (value) {
+    serverTime.value = value;
+    const today = value.slice(0, 10);
+    if (!dashboardFilters.from) dashboardFilters.from = `${today.slice(0, 7)}-01`;
+    if (!dashboardFilters.to) dashboardFilters.to = today;
+    if (!orderFilters.from) orderFilters.from = today;
+    if (!orderFilters.to) orderFilters.to = today;
+  }
+}
+function openDatePicker(event: Event) {
+  (event.currentTarget as HTMLInputElement).showPicker?.();
 }
 function forceLogin(message = "Sua sessão expirou. Entre novamente.") {
   user.value = null;
@@ -389,8 +401,8 @@ async function loadRememberedLogin() {
 }
 async function loadAll() {
   const jobs: Promise<any>[] = [
-    api("/api/dashboard").then((v) => (dashboard.value = v)),
-    api<Order[]>("/api/orders").then((v) => (orders.value = v)),
+    loadDashboard(),
+    loadOrders(),
     api<Customer[]>("/api/customers").then((v) => (customers.value = v)),
     api<ServiceType[]>("/api/service-types").then(
       (v) => (serviceTypes.value = v),
@@ -408,6 +420,18 @@ async function loadAll() {
   if (canAudit.value)
     jobs.push(api("/api/audit").then((v) => (auditData.value = v)));
   await Promise.all(jobs);
+}
+async function loadDashboard() {
+  dashboard.value = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
+}
+async function loadOrders() {
+  orders.value = await api(`/api/orders?${new URLSearchParams(orderFilters).toString()}`);
+  selectedOrders.value = [];
+}
+async function resetOrderFilters() {
+  const today = serverTime.value.slice(0, 10);
+  Object.assign(orderFilters, { from: today, to: today, status: "", paymentStatus: "" });
+  await loadOrders();
 }
 onMounted(async () => {
   try {
@@ -449,6 +473,7 @@ async function logout() {
   } catch {
   } finally {
     forceLogin("Sessão encerrada.");
+    await loadRememberedLogin();
   }
 }
 async function changePassword() {
@@ -462,8 +487,10 @@ async function changePassword() {
         newPassword: changeForm.newPassword,
       },
     });
-    localStorage.removeItem(rememberedLoginKey);
-    rememberLogin.value = false;
+    if (rememberLogin.value) {
+      loginForm.password = changeForm.newPassword;
+      await saveRememberedLogin();
+    }
     user.value = data.user;
     changeModal.value = false;
     Object.assign(changeForm, {
@@ -515,6 +542,18 @@ const orderModal = ref(false),
     withdrawnBy: "",
     notes: "",
   });
+const gradeQuantity = computed(() =>
+    orderForm.sizes.reduce((sum: number, item: SizeItem) => sum + Number(item.quantity || 0), 0),
+  ),
+  gradeMatchesQuantity = computed(
+    () => Math.abs(gradeQuantity.value - Number(orderForm.quantity || 0)) < 0.0001,
+  ),
+  dashboardServiceMax = computed(() =>
+    Math.max(1, ...(dashboard.value?.byService || []).map((item: any) => Number(item.total))),
+  ),
+  dashboardStatusMax = computed(() =>
+    Math.max(1, ...(dashboard.value?.statuses || []).map((item: any) => Number(item.total))),
+  );
 function editOrder(item?: Order) {
   const firstCustomer = activeCustomers.value[0],
     firstService = activeServiceTypes.value[0];
@@ -564,7 +603,7 @@ async function saveOrder() {
       body: orderForm,
     });
     orderModal.value = false;
-    orders.value = await api("/api/orders");
+    await Promise.all([loadOrders(), loadDashboard()]);
     await loadAudit();
     toast("Pedido salvo e auditado.");
   } catch (e: any) {
@@ -579,7 +618,7 @@ async function applyBulkAction() {
   if (!value) return;
   busy.value = true;
   try {
-    orders.value = await api("/api/orders/bulk-status", {
+    await api("/api/orders/bulk-status", {
       method: "PUT",
       body:
         kind === "status"
@@ -588,6 +627,7 @@ async function applyBulkAction() {
     });
     selectedOrders.value = [];
     bulkAction.value = "";
+    await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedidos atualizados em lote.");
   } catch (e: any) {
     toast(e?.data?.statusMessage || "Não foi possível atualizar os pedidos");
@@ -597,13 +637,13 @@ async function applyBulkAction() {
 }
 async function cloneOrder(item: Order) {
   await api(`/api/orders/${item.id}/clone`, { method: "POST" });
-  orders.value = await api("/api/orders");
+  await Promise.all([loadOrders(), loadDashboard()]);
   toast("Pedido clonado.");
 }
 async function deleteOrder(item: Order) {
   if (!confirm(`Excluir o pedido ${item.orderNumber}?`)) return;
   await api(`/api/orders/${item.id}`, { method: "DELETE" });
-  orders.value = await api("/api/orders");
+  await Promise.all([loadOrders(), loadDashboard()]);
   toast("Pedido removido. O histórico foi preservado.");
 }
 async function pdf(item?: Order) {
@@ -711,6 +751,10 @@ async function deleteUser(item: User) {
 }
 async function loadAudit() {
   if (canAudit.value) auditData.value = await api("/api/audit");
+}
+function auditDetails(details: unknown) {
+  if (!details || (typeof details === "object" && !Object.keys(details).length)) return "—";
+  return JSON.stringify(details, null, 2);
 }
 const materialModal = ref(false),
   materialForm = reactive<any>({
@@ -1047,14 +1091,19 @@ async function saveServiceType() {
             <Icon name="lucide:plus" />Novo pedido
           </button>
         </div>
+        <form class="panel period-filters" @submit.prevent="loadDashboard">
+          <label>De<input v-model="dashboardFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
+          <label>Até<input v-model="dashboardFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
+          <button class="button"><Icon name="lucide:filter" />Atualizar período</button>
+        </form>
         <div class="metrics">
           <article>
             <span class="metric-icon green"
               ><Icon name="lucide:clipboard-list"
             /></span>
             <div>
-              <small>Pedidos ativos</small><strong>{{ orders.length }}</strong
-              ><em>em acompanhamento</em>
+              <small>Pedidos no período</small><strong>{{ dashboard?.summary?.orders || 0 }}</strong
+              ><em>{{ brDate(dashboardFilters.from) }} a {{ brDate(dashboardFilters.to) }}</em>
             </div>
           </article>
           <article>
@@ -1064,9 +1113,9 @@ async function saveServiceType() {
             <div>
               <small>Valor em pedidos</small
               ><strong>{{
-                money(orders.reduce((s, o) => s + o.total, 0))
+                money(dashboard?.summary?.totalValue || 0)
               }}</strong
-              ><em>total cadastrado</em>
+              ><em>{{ money(dashboard?.summary?.paidValue || 0) }} recebidos</em>
             </div>
           </article>
           <article>
@@ -1076,9 +1125,9 @@ async function saveServiceType() {
             <div>
               <small>Prontos</small
               ><strong>{{
-                orders.filter((o) => o.status === "ready").length
+                dashboard?.summary?.withdrawn || 0
               }}</strong
-              ><em>aguardando retirada</em>
+              ><em>retirados ou entregues</em>
             </div>
           </article>
           <article>
@@ -1088,11 +1137,33 @@ async function saveServiceType() {
             <div>
               <small>Em produção</small
               ><strong>{{
-                orders.filter((o) => o.status === "in_production").length
+                dashboard?.summary?.inProduction || 0
               }}</strong
               ><em>pedidos em andamento</em>
             </div>
           </article>
+        </div>
+        <div class="dashboard-charts">
+          <div class="panel chart-panel">
+            <div class="panel-head"><div><span class="eyebrow">Faturamento</span><h3>Ganhos por tipo de serviço</h3></div><Icon name="lucide:chart-no-axes-column-increasing" class="panel-icon" /></div>
+            <div class="bar-chart">
+              <div v-for="item in dashboard?.byService || []" :key="item.name" class="bar-row">
+                <div><strong>{{ item.name }}</strong><small>{{ item.orders }} pedido(s) · {{ money(item.paid) }} pagos</small></div>
+                <span><i :style="{ width: `${(item.total / dashboardServiceMax) * 100}%` }" /></span><b>{{ money(item.total) }}</b>
+              </div>
+              <div v-if="!dashboard?.byService?.length" class="empty">Nenhum pedido no período.</div>
+            </div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-head"><div><span class="eyebrow">Produção</span><h3>Pedidos por situação</h3></div><Icon name="lucide:chart-bar-big" class="panel-icon" /></div>
+            <div class="bar-chart status-chart">
+              <div v-for="item in dashboard?.statuses || []" :key="item.name" class="bar-row">
+                <div><strong>{{ statusLabels[item.name] || item.name }}</strong></div>
+                <span><i :style="{ width: `${(item.total / dashboardStatusMax) * 100}%` }" /></span><b>{{ item.total }}</b>
+              </div>
+              <div v-if="!dashboard?.statuses?.length" class="empty">Nenhum pedido no período.</div>
+            </div>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-head">
@@ -1148,6 +1219,14 @@ async function saveServiceType() {
             </button>
           </div>
         </div>
+        <form class="panel order-filters" @submit.prevent="loadOrders">
+          <label>De<input v-model="orderFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
+          <label>Até<input v-model="orderFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
+          <label>Situação da produção<select v-model="orderFilters.status"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="resetOrderFilters">Hoje</button>
+        </form>
         <div v-if="canWriteOrders" class="panel bulk-actions">
           <strong>{{ selectedOrders.length }} selecionado(s)</strong
           ><select v-model="bulkAction">
@@ -1659,6 +1738,7 @@ async function saveServiceType() {
                 <th>Usuário</th>
                 <th>Ação</th>
                 <th>Entidade</th>
+                <th>Detalhes</th>
                 <th>IP</th>
               </tr>
             </thead>
@@ -1675,6 +1755,7 @@ async function saveServiceType() {
                   {{ log.entity }}
                   <small v-if="log.entityId">#{{ log.entityId }}</small>
                 </td>
+                <td><pre class="audit-details">{{ auditDetails(log.details) }}</pre></td>
                 <td>{{ log.ipAddress || "—" }}</td>
               </tr>
             </tbody>
@@ -1764,8 +1845,10 @@ async function saveServiceType() {
             >Data do pedido<input
               v-model="orderForm.orderDate"
               type="date"
+              :max="serverTime.slice(0, 10)"
+              @click="openDatePicker"
               required /></label
-          ><label>Prazo<input v-model="orderForm.dueDate" type="date" /></label
+          ><label>Prazo<input v-model="orderForm.dueDate" type="date" @click="openDatePicker" /></label
           ><label
             >Status<select v-model="orderForm.status">
               <option
@@ -1843,11 +1926,17 @@ async function saveServiceType() {
             </button>
           </div>
         </div>
+        <div :class="['grade-summary', { invalid: !gradeMatchesQuantity }]">
+          <span>Quantidade na grade: <strong>{{ gradeQuantity }}</strong> de <strong>{{ orderForm.quantity || 0 }}</strong></span>
+          <small>{{ gradeMatchesQuantity ? "Grade conferida" : "A soma da grade deve ser igual à quantidade do pedido" }}</small>
+        </div>
         <div class="two-cols">
           <label
             >Data da retirada<input
               v-model="orderForm.withdrawalDate"
-              type="date" /></label
+              type="date"
+              :max="serverTime.slice(0, 10)"
+              @click="openDatePicker" /></label
           ><label>Quem retirou<input v-model="orderForm.withdrawnBy" /></label>
         </div>
         <label
@@ -1869,7 +1958,7 @@ async function saveServiceType() {
           ><button
             class="button"
             :disabled="
-              busy || !activeCustomers.length || !activeServiceTypes.length
+              busy || !activeCustomers.length || !activeServiceTypes.length || !gradeMatchesQuantity
             "
           >
             Salvar pedido
