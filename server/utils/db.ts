@@ -178,15 +178,32 @@ async function migrateAndSeed() {
       await tx`INSERT INTO schema_migrations (version) VALUES ('002_refresh_session_ttl')`
     }
 
-    const config = useRuntimeConfig()
-    const adminCount = Number((await tx`SELECT COUNT(*)::int AS admin_count FROM users WHERE role='admin'`)[0]?.adminCount || 0)
-    if (adminCount === 0 && config.adminInitialPassword) {
-      const passwordHash = await hash(config.adminInitialPassword, 12)
-      await tx`INSERT INTO users (name, email, password_hash, role, must_change_password)
-        VALUES ('Administrador', 'admin@mavicustos.local', ${passwordHash}, 'admin', TRUE)`
-    }
-
   })
   await migrate(drizzle(sql), { migrationsFolder: resolve(process.cwd(), 'drizzle') })
+  await secureInitialAdmin(sql)
+}
+
+async function secureInitialAdmin(sql: ReturnType<typeof postgres>) {
+  const config = useRuntimeConfig()
+  const initialPassword = String(config.adminInitialPassword || '')
+  const initialName = String(config.adminInitialName || '').trim()
+  const initialEmail = String(config.adminInitialEmail || '').trim().toLowerCase()
+  const compromisedSeedHash = '$2b$12$pqz5SplEj6MKNLthaTkhNO03QJ4vevQdTpf6GsKu0XDNKFlRUFhhu'
+  const [seeded] = await sql`SELECT id FROM users WHERE password_hash=${compromisedSeedHash} LIMIT 1`
+  const [adminCount] = await sql`SELECT COUNT(*)::int AS count FROM users WHERE role='admin' AND active=TRUE AND deleted_at IS NULL`
+  if ((seeded || Number(adminCount?.count || 0) === 0) && (!isStrongPassword(initialPassword) || !initialName || !/^\S+@\S+\.\S+$/.test(initialEmail)))
+    throw new Error('ADMIN_INITIAL_NAME, ADMIN_INITIAL_EMAIL e uma ADMIN_INITIAL_PASSWORD forte sao obrigatorios para o administrador inicial')
+  if (!initialPassword) return
+
+  const passwordHash = await hash(initialPassword, 12)
+  if (seeded)
+    await sql`UPDATE users SET password_hash=${passwordHash}, must_change_password=TRUE, updated_at=NOW() WHERE password_hash=${compromisedSeedHash}`
+  if (Number(adminCount?.count || 0) === 0)
+    await sql`INSERT INTO users (name, email, password_hash, role, must_change_password)
+      VALUES (${initialName}, ${initialEmail}, ${passwordHash}, 'admin', TRUE)`
+}
+
+function isStrongPassword(value: string) {
+  return value.length >= 12 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /[0-9]/.test(value) && /[^A-Za-z0-9]/.test(value)
 }
 

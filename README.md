@@ -9,9 +9,14 @@ Configure no `.env` as conexões com o PostgreSQL existente:
 ```dotenv
 NUXT_DATABASE_URL=postgres://usuario_app:senha@servidor:5432/calcados?sslmode=require
 NUXT_DATABASE_ADMIN_URL=postgres://usuario_admin:senha@servidor:5432/postgres?sslmode=require
+APP_ORIGIN=https://mavi.seu-dominio.com.br
+COOKIE_SECURE=true
+TRUST_PROXY=false
 ```
 
 `NUXT_DATABASE_ADMIN_URL` deve apontar para um banco que já exista no mesmo servidor, normalmente `postgres`, usando uma role com permissão `CREATEDB`. `NUXT_DATABASE_URL` aponta para o banco exclusivo da aplicação.
+
+`APP_ORIGIN` deve conter a origem HTTPS pública exata. Ative `TRUST_PROXY=true` somente quando todas as requisições chegarem por um proxy reverso confiável; isso permite usar `X-Forwarded-For` no controle de tentativas de login e na auditoria.
 
 ```bash
 docker compose up --build
@@ -32,7 +37,8 @@ O Nuxt acessa o mesmo PostgreSQL externo configurado no `.env`.
 
 ## Primeiro acesso
 
-- E-mail: `admin@mavicustos.local`
+- E-mail: valor de `ADMIN_INITIAL_EMAIL` no `.env` (por padrão, `caiquerodriguesalmeida@gmail.com`)
+- Nome: valor de `ADMIN_INITIAL_NAME` no `.env`
 - Senha temporária: valor de `ADMIN_INITIAL_PASSWORD` no `.env`
 - O sistema exige a troca da senha no primeiro login.
 

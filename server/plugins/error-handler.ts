@@ -14,16 +14,17 @@ export default defineNitroPlugin((nitroApp) => {
     } else if (!error.statusCode || error.statusCode >= 500) {
       error.statusCode = 500
       error.statusMessage = 'Não foi possível concluir a solicitação. Tente novamente ou procure um administrador.'
+      console.error('Erro interno em requisição', { method: event.method, path: event.path, code: error.code, error })
     }
     try {
       await audit(event, 'REQUEST_ERROR', 'request', undefined, {
         method: event.method,
         path: event.path,
         statusCode: error.statusCode,
-        message: error.message,
+        message: String(error.message || error.statusMessage || '').slice(0, 2000),
         code: error.code,
         data: error.data,
-        stack: error.statusCode >= 500 ? error.stack : undefined,
+        stack: error.statusCode >= 500 ? String(error.stack || '').slice(0, 16_000) : undefined,
       })
     } catch (auditError) {
       console.error('Falha ao registrar erro na auditoria', auditError)

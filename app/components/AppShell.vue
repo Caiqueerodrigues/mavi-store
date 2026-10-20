@@ -218,9 +218,7 @@ const canCosts = computed(() =>
   canWriteOrders = computed(() =>
     ["admin", "manager", "operator"].includes(user.value?.role || ""),
   ),
-  canAudit = computed(() =>
-    ["admin", "manager", "viewer"].includes(user.value?.role || ""),
-  );
+  canAudit = computed(() => user.value?.role === "admin");
 const nav = computed(() =>
   [
     {

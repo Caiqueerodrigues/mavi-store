@@ -1,6 +1,6 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   modules: ['@nuxt/icon'],
   css: ['~/assets/css/theme.css', '~/assets/css/main.css'],
   runtimeConfig: {
@@ -9,7 +9,11 @@ export default defineNuxtConfig({
     jwtAccessSecret: 'development-access-secret-change-me-32chars',
     jwtRefreshSecret: 'development-refresh-secret-change-me-32chars',
     adminInitialPassword: '',
+    adminInitialName: 'Caique Rodrigues Almeida',
+    adminInitialEmail: 'caiquerodriguesalmeida@gmail.com',
     cookieSecure: false,
+    appOrigin: '',
+    trustProxy: false,
     appTimeZone: 'America/Sao_Paulo'
   },
   app: {

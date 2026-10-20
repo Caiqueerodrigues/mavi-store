@@ -9,10 +9,10 @@
     ]
   },
   "scripts": {
-    "dev": "nuxt dev --host 0.0.0.0",
-    "build": "nuxt build",
-    "preview": "nuxt preview --host 0.0.0.0",
-    "typecheck": "nuxt typecheck",
+    "dev": "nuxt-cli dev --host 0.0.0.0",
+    "build": "nuxt-cli build",
+    "preview": "nuxt-cli preview --host 0.0.0.0",
+    "typecheck": "nuxt-cli typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
@@ -21,7 +21,7 @@
     "bcryptjs": "^3.0.2",
     "drizzle-orm": "^0.45.4",
     "jose": "^6.1.0",
-    "nuxt": "^4.0.0",
+    "nuxt": "4.6.2",
     "pdf-lib": "^1.17.1",
     "postgres": "^3.4.7",
     "vue": "^3.5.0",

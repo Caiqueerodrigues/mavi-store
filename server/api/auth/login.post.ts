@@ -1,4 +1,5 @@
 import { compare } from "bcryptjs";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 const schema = z.object({
@@ -6,25 +7,37 @@ const schema = z.object({
   password: z.string().min(8).max(200),
 });
 const attempts = new Map<string, { count: number; resetAt: number }>();
+const dummyHash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6Ttxv1eYlXrGQ7qkF8QjWdEcBv8Le";
+const windowMs = 15 * 60_000;
+const accountKey = (email: string) =>
+  `account:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex")}`;
+
+function consumeAttempt(key: string, now: number) {
+  if (attempts.size > 10_000)
+    for (const [entry, value] of attempts) if (value.resetAt <= now) attempts.delete(entry);
+  if (attempts.size >= 10_000 && !attempts.has(key))
+    throw createError({ statusCode: 429, statusMessage: "Muitas tentativas. Aguarde 15 minutos." });
+  const current = attempts.get(key);
+  if (current && current.resetAt > now && current.count >= 5)
+    throw createError({ statusCode: 429, statusMessage: "Muitas tentativas. Aguarde 15 minutos." });
+  if (!current || current.resetAt <= now) attempts.set(key, { count: 0, resetAt: now + windowMs });
+}
 
 export default defineEventHandler(async (event) => {
   assertSameOrigin(event);
-  const ip = getRequestIP(event) || "unknown";
-  const current = attempts.get(ip);
-  const monotonicNow = performance.now();
-  if (current && current.resetAt > monotonicNow && current.count >= 5)
-    throw createError({
-      statusCode: 429,
-      statusMessage: "Muitas tentativas. Aguarde 15 minutos.",
-    });
-  if (!current || current.resetAt <= monotonicNow)
-    attempts.set(ip, { count: 0, resetAt: monotonicNow + 15 * 60_000 });
   const input = await validatedBody(event, schema);
+  const ip = clientIp(event);
+  const account = accountKey(input.email);
+  const monotonicNow = performance.now();
+  consumeAttempt(ip, monotonicNow);
+  consumeAttempt(account, monotonicNow);
   const [row] =
     await db()`SELECT id, name, email, role, password_hash, active, must_change_password FROM users
     WHERE LOWER(email)=LOWER(${input.email}) AND deleted_at IS NULL`;
-  if (!row || !(await compare(input.password, row.passwordHash))) {
+  const passwordMatches = await compare(input.password, row?.passwordHash || dummyHash);
+  if (!row || !passwordMatches) {
     attempts.get(ip)!.count++;
+    attempts.get(account)!.count++;
     await audit(event, "AUTH_LOGIN_FAILED", "auth", input.email, {
       reason: "invalid_credentials",
     });
@@ -43,6 +56,7 @@ export default defineEventHandler(async (event) => {
     });
   }
   attempts.delete(ip);
+  attempts.delete(account);
   const user: AuthUser = {
     id: row.id,
     name: row.name,

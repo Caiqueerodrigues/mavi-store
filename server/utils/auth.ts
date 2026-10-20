@@ -38,10 +38,9 @@ const permissions: Record<Role, Permission[]> = {
     "orders:write",
     "orders:delete",
     "pdf:generate",
-    "audit:read",
   ],
   operator: ["dashboard:read", "orders:read", "orders:write", "pdf:generate"],
-  viewer: ["dashboard:read", "orders:read", "audit:read"],
+  viewer: ["dashboard:read", "orders:read"],
 };
 
 const accessCookie = "mavi_access";
@@ -51,11 +50,23 @@ const encoder = new TextEncoder();
 
 function config() {
   const c = useRuntimeConfig();
+  const accessSecret = String(c.jwtAccessSecret);
+  const refreshSecret = String(c.jwtRefreshSecret);
   if (
-    String(c.jwtAccessSecret).length < 32 ||
-    String(c.jwtRefreshSecret).length < 32
+    accessSecret.length < 32 ||
+    refreshSecret.length < 32 ||
+    accessSecret === refreshSecret ||
+    (process.env.NODE_ENV === "production" &&
+      (accessSecret.includes("change-me") || refreshSecret.includes("change-me")))
   )
-    throw new Error("JWT secrets must have at least 32 characters");
+    throw new Error("JWT secrets must be distinct, unpredictable and have at least 32 characters");
+  if (process.env.NODE_ENV === "production") {
+    const origin = String(c.appOrigin || "");
+    if (!origin || new URL(origin).protocol !== "https:")
+      throw new Error("NUXT_APP_ORIGIN must be a valid HTTPS origin in production");
+    if (String(c.cookieSecure).toLowerCase() !== "true")
+      throw new Error("NUXT_COOKIE_SECURE must be true in production");
+  }
   return c;
 }
 function cookieOptions(maxAge: number, httpOnly = true) {
@@ -71,11 +82,17 @@ function cookieOptions(maxAge: number, httpOnly = true) {
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
+export function clientIp(event: H3Event) {
+  const trustProxy = String(useRuntimeConfig().trustProxy).toLowerCase() === "true";
+  return getRequestIP(event, { xForwardedFor: trustProxy }) || "unknown";
+}
+
 async function signToken(
   user: AuthUser,
   type: "access" | "refresh",
   jti: string,
   seconds: number,
+  sessionId: string,
 ) {
   const c = config();
   return new SignJWT({
@@ -84,6 +101,7 @@ async function signToken(
     role: user.role,
     mustChangePassword: user.mustChangePassword,
     type,
+    sid: sessionId,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(String(user.id))
@@ -103,12 +121,12 @@ export async function issueSession(event: H3Event, user: AuthUser) {
   const accessJti = randomUUID(),
     refreshJti = randomUUID();
   const [access, refresh] = await Promise.all([
-    signToken(user, "access", accessJti, 15 * 60),
-    signToken(user, "refresh", refreshJti, 24 * 3600),
+    signToken(user, "access", accessJti, 15 * 60, refreshJti),
+    signToken(user, "refresh", refreshJti, 24 * 3600, refreshJti),
   ]);
   await db()`INSERT INTO refresh_sessions (id, user_id, token_hash, expires_at, ip_address, user_agent)
     VALUES (${refreshJti}, ${user.id}, ${digest(refresh)}, NOW() + INTERVAL '1 day',
-      ${getRequestIP(event, { xForwardedFor: true }) || null}, ${getHeader(event, "user-agent") || null})`;
+      ${clientIp(event)}, ${getHeader(event, "user-agent")?.slice(0, 500) || null})`;
   setCookie(event, accessCookie, access, cookieOptions(15 * 60));
   setCookie(event, refreshCookie, refresh, cookieOptions(24 * 3600));
   const csrf = randomBytes(32).toString("base64url");
@@ -125,9 +143,12 @@ export async function verifyAccess(event: H3Event): Promise<AuthUser | null> {
       encoder.encode(config().jwtAccessSecret),
       { issuer: "mavi-custos", audience: "mavi-web" },
     );
-    if (payload.type !== "access") return null;
+    if (payload.type !== "access" || typeof payload.sid !== "string") return null;
     const [row] =
-      await db()`SELECT id, name, email, role, must_change_password FROM users WHERE id=${Number(payload.sub)} AND active=TRUE AND deleted_at IS NULL`;
+      await db()`SELECT u.id, u.name, u.email, u.role, u.must_change_password
+        FROM users u
+        WHERE u.id=${Number(payload.sub)} AND u.active=TRUE AND u.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM refresh_sessions s WHERE s.id=${payload.sid} AND s.user_id=u.id AND s.revoked_at IS NULL AND s.expires_at > clock_timestamp())`;
     return row
       ? {
           id: row.id,
@@ -210,14 +231,15 @@ export function assertCsrf(event: H3Event) {
       statusCode: 403,
       statusMessage: "Token CSRF inválido",
     });
-  const origin = getHeader(event, "origin"),
-    host = getHeader(event, "host");
-  if (origin && host && new URL(origin).host !== host)
-    throw createError({ statusCode: 403, statusMessage: "Origem inválida" });
+  assertSameOrigin(event);
 }
 export function assertSameOrigin(event: H3Event) {
-  const origin = getHeader(event, "origin"),
-    host = getHeader(event, "host");
-  if (origin && host && new URL(origin).host !== host)
+  const configuredOrigin = String(useRuntimeConfig().appOrigin || "").replace(/\/$/, "");
+  const source = getHeader(event, "origin") || getHeader(event, "referer");
+  const host = getHeader(event, "host");
+  const expected = configuredOrigin || (host ? `${getRequestProtocol(event)}://${host}` : "");
+  let sourceOrigin = "";
+  try { sourceOrigin = source ? new URL(source).origin : ""; } catch { /* rejected below */ }
+  if (!sourceOrigin || !expected || sourceOrigin !== new URL(expected).origin)
     throw createError({ statusCode: 403, statusMessage: "Origem inválida" });
 }
