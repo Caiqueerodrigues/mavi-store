@@ -26,6 +26,32 @@ Acesse <http://localhost:3001>. O Compose sobe somente a aplicação; ele não c
 
 Para usar outra porta HTTP, defina `APP_PORT` no `.env`.
 
+## Deploy pelo Gitea Actions
+
+O workflow `.gitea/workflows/deploy.yml` cria a imagem Docker e atualiza o
+container em todo push para a branch `main`. O runner precisa estar instalado
+na mesma maquina do deploy, com acesso aos comandos `docker`, `docker compose`
+e `curl`.
+
+Cadastre em **Settings > Actions > Secrets**:
+
+- `NUXT_DATABASE_URL`: URL completa do banco PostgreSQL especifico da aplicacao;
+- `NUXT_DATABASE_ADMIN_URL`: URL administrativa opcional, usada somente para
+  criar o banco quando ele ainda nao existe;
+- `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET`: chaves aleatorias distintas;
+- `ADMIN_INITIAL_PASSWORD`: senha inicial do administrador.
+
+Cadastre em **Settings > Actions > Variables**:
+
+- `APP_ORIGIN`: origem publica exata, por exemplo `https://mavi.exemplo.com`;
+- `APP_PORT`: porta publicada no host (opcional, padrao `3001`);
+- `COOKIE_SECURE` e `TRUST_PROXY` (opcionais, padrao `true` no CI);
+- `ADMIN_INITIAL_NAME` e `ADMIN_INITIAL_EMAIL` (opcionais).
+
+A URL do banco e injetada somente quando o container inicia; ela nao e gravada
+na imagem. Se o banco especifico ja existir e a role da aplicacao puder aplicar
+as migracoes, `NUXT_DATABASE_ADMIN_URL` pode ficar vazio.
+
 ## Desenvolvimento local
 
 ```bash

@@ -9,10 +9,10 @@
     ]
   },
   "scripts": {
-    "dev": "nuxt-cli dev --host 0.0.0.0",
-    "build": "nuxt-cli build",
-    "preview": "nuxt-cli preview --host 0.0.0.0",
-    "typecheck": "nuxt-cli typecheck",
+    "dev": "nuxt dev --host 0.0.0.0",
+    "build": "nuxt build",
+    "preview": "nuxt preview --host 0.0.0.0",
+    "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

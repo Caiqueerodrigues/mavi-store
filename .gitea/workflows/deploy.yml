@@ -1,0 +1,65 @@
+name: Construir e implantar imagem Docker
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: mavi-production
+  cancel-in-progress: false
+
+jobs:
+  implantacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    env:
+      APP_IMAGE: mavi:${{ gitea.sha }}
+      APP_PORT: ${{ vars.APP_PORT || '3001' }}
+      NUXT_DATABASE_URL: ${{ secrets.NUXT_DATABASE_URL }}
+      NUXT_DATABASE_ADMIN_URL: ${{ secrets.NUXT_DATABASE_ADMIN_URL }}
+      JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+      ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
+      ADMIN_INITIAL_NAME: ${{ vars.ADMIN_INITIAL_NAME || 'Caique Rodrigues Almeida' }}
+      ADMIN_INITIAL_EMAIL: ${{ vars.ADMIN_INITIAL_EMAIL || 'caiquerodriguesalmeida@gmail.com' }}
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      COOKIE_SECURE: ${{ vars.COOKIE_SECURE || 'true' }}
+      TRUST_PROXY: ${{ vars.TRUST_PROXY || 'true' }}
+
+    steps:
+      - name: Baixar código-fonte
+        uses: actions/checkout@v4
+
+      - name: Validar segredos obrigatórios
+        shell: bash
+        run: |
+          set -eu
+          test -n "$NUXT_DATABASE_URL" || { echo "O segredo NUXT_DATABASE_URL é obrigatório"; exit 1; }
+          test -n "$JWT_ACCESS_SECRET" || { echo "O segredo JWT_ACCESS_SECRET é obrigatório"; exit 1; }
+          test -n "$JWT_REFRESH_SECRET" || { echo "O segredo JWT_REFRESH_SECRET é obrigatório"; exit 1; }
+          test -n "$ADMIN_INITIAL_PASSWORD" || { echo "O segredo ADMIN_INITIAL_PASSWORD é obrigatório"; exit 1; }
+          test -n "$APP_ORIGIN" || { echo "A variável APP_ORIGIN é obrigatória"; exit 1; }
+
+      - name: Construir imagem
+        run: docker build --pull --tag "$APP_IMAGE" .
+
+      - name: Implantar container
+        run: docker compose up --detach --no-build --remove-orphans app
+
+      - name: Verificar saúde da aplicação
+        shell: bash
+        run: |
+          set -eu
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs --tail=100 app
+          exit 1
