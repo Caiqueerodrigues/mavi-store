@@ -20,6 +20,7 @@ jobs:
     env:
       APP_IMAGE: mavi:${{ gitea.sha }}
       APP_PORT: ${{ vars.APP_PORT || '3001' }}
+      DOCKER_NETWORK: ${{ vars.DOCKER_NETWORK }}
       NUXT_DATABASE_URL: ${{ secrets.NUXT_DATABASE_URL }}
       NUXT_DATABASE_ADMIN_URL: ${{ secrets.NUXT_DATABASE_ADMIN_URL }}
       JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
@@ -67,11 +68,21 @@ jobs:
         shell: bash
         run: |
           set -eu
+          argumentos_rede=()
+          if [ -n "${DOCKER_NETWORK:-}" ]; then
+            docker network inspect "$DOCKER_NETWORK" >/dev/null || {
+              echo "A rede Docker $DOCKER_NETWORK não existe"
+              exit 1
+            }
+            argumentos_rede=(--network "$DOCKER_NETWORK")
+          fi
+
           docker rm --force mavi-store-app >/dev/null 2>&1 || true
           docker rm --force mavi-store_app_1 >/dev/null 2>&1 || true
           docker run --detach \
             --name mavi-store-app \
             --restart unless-stopped \
+            "${argumentos_rede[@]}" \
             --publish "${APP_PORT}:3000" \
             --env NUXT_DATABASE_URL \
             --env NUXT_DATABASE_ADMIN_URL \
