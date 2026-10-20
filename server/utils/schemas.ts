@@ -5,7 +5,7 @@ export const materialSchema = z.object({
   supplier: z.string().trim().max(160).nullable().optional(),
   unit: z.string().trim().min(1).max(20),
   purchasePrice: z.coerce.number().nonnegative(),
-  purchaseQuantity: z.coerce.number().positive(),
+  yieldQuantity: z.coerce.number().positive(),
   active: z.boolean().optional().default(true)
 })
 

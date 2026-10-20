@@ -16,7 +16,12 @@ export function db() {
 }
 
 export function ensureDatabase() {
-  if (!ready) ready = createDatabaseIfNeeded().then(migrateAndSeed)
+  if (!ready) {
+    ready = createDatabaseIfNeeded().then(migrateAndSeed).catch((error) => {
+      ready = undefined
+      throw error
+    })
+  }
   return ready
 }
 
@@ -181,80 +186,7 @@ async function migrateAndSeed() {
         VALUES ('Administrador', 'admin@mavicustos.local', ${passwordHash}, 'admin', TRUE)`
     }
 
-    if (applied.has('003_initial_catalog')) return
-    const count = Number((await tx`SELECT COUNT(*)::int AS count FROM materials`)[0]?.count || 0)
-    if (count > 0) {
-      await seedExtendedCatalog(tx)
-      await tx`INSERT INTO schema_migrations (version) VALUES ('003_initial_catalog')`
-      return
-    }
-
-    await tx`
-      INSERT INTO sales_channels (name, fixed_fee, percentage_fee)
-      VALUES ('Shopee', 4.50, 0.20), ('Venda direta', 0, 0)
-    `
-    await tx`INSERT INTO app_settings (id, target_profit, default_channel_id) VALUES (1, 5, 1)`
-    await tx`
-      INSERT INTO materials (name, supplier, unit, purchase_price, purchase_quantity) VALUES
-      ('Base geral da sandália', 'Composição da planilha', 'PAR', 12.423, 1),
-      ('Tira Nice Ouro Light', 'Fornecedor atual', 'MT', 5.90, 1),
-      ('Tira Mônaco Bco Cristal', 'Fornecedor atual', 'MT', 5.90, 1),
-      ('Tira Colmeia 4mm Bco Cristal', 'Fornecedor atual', 'MT', 3.90, 1),
-      ('Tira Paris Camurça Bco/Cristal', 'Fornecedor atual', 'MT', 3.50, 1),
-      ('Trança Spectro Dourado', 'Fornecedor atual', 'MT', 2.00, 1),
-      ('Sola All Star', 'Noroeste', 'PAR', 3.30, 1),
-      ('Forro', 'Noroeste', 'MT', 12.64, 1),
-      ('Material Spectro Ouro', 'Noroeste', 'MT', 26.90, 1),
-      ('Manta strass', 'Compofram', 'MT', 16.00, 1),
-      ('Fivela', 'VL Bandeirantes', 'UN', 19.00, 100)
-    `
-    await tx`
-      INSERT INTO products (name, sku, category, color, current_price) VALUES
-      ('Ana', 'ANA-OURO', 'Sandália', 'Ouro', 37.99),
-      ('Luíza', 'LUIZA-CRISTAL', 'Sandália', 'Rosa / Preto / Branco', 33.99),
-      ('Pietra', 'PIETRA-COLMEIA', 'Sandália', 'Rosa / Preto / Branco', 32.99),
-      ('Patricia', 'PATRICIA-PARIS', 'Sandália', 'Rosa / Preto / Branco', 32.99),
-      ('Lara', 'LARA-DOURADO', 'Sandália', 'Ouro', 29.99)
-    `
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT p.id, 1, 1 FROM products p`
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT id, 2, 0.97 FROM products WHERE name = 'Ana'`
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT id, 3, 0.97 FROM products WHERE name = 'Luíza'`
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT id, 4, 1.07 FROM products WHERE name = 'Pietra'`
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT id, 5, 0.99 FROM products WHERE name = 'Patricia'`
-    await tx`INSERT INTO product_components (product_id, material_id, quantity) SELECT id, 6, 1 FROM products WHERE name = 'Lara'`
-    await seedExtendedCatalog(tx)
-    await tx`INSERT INTO schema_migrations (version) VALUES ('003_initial_catalog')`
   })
   await migrate(drizzle(sql), { migrationsFolder: resolve(process.cwd(), 'drizzle') })
 }
 
-async function seedExtendedCatalog(tx: any) {
-  const extraMaterials = [
-    ['Base cabedal Lívia', 'Composição Cabedal', 'PAR', 15.185], ['Enfeite Flor/Laço/Borboleta', 'Produção própria', 'PAR', 1.52],
-    ['Enfeite Strass Lívia', 'Compofram', 'PAR', 1.225], ['Enfeite Ágata', 'Produção própria', 'PAR', 2.04], ['Enfeite Carol', 'Produção própria', 'PAR', 1.59],
-    ['Palmilha corte tênis', 'Produção própria', 'PAR', .25], ['Montagem tênis', 'Produção própria', 'PAR', 4], ['Corte cabedal tênis', 'Produção própria', 'PAR', .5],
-    ['Embalagem Shopee', 'Shopee', 'UN', .19], ['Waster', 'Produção própria', 'PAR', .8], ['Pesponto tênis', 'Produção própria', 'PAR', 1.5],
-    ['Caixa para tênis', 'Fornecedor atual', 'UN', .9], ['Enfeite emborrachado', 'Silvana/Quemil', 'PAR', 2],
-    ['Cabedal cacharrel', 'Noroeste', 'PAR', 1.5], ['Palmilha EVA forrada', 'Noroeste', 'PAR', .3333333333], ['Cabedal nylon', 'Noroeste', 'PAR', 1.75]
-  ]
-  for (const [name, supplier, unit, price] of extraMaterials) await tx`INSERT INTO materials (name,supplier,unit,purchase_price,purchase_quantity)
-    SELECT ${name},${supplier},${unit},${price},1 WHERE NOT EXISTS (SELECT 1 FROM materials WHERE name=${name})`
-  const extraProducts = [
-    ['Lívia Flor','CAB-LIVIA-FLOR','Sandália de cabedal','',33.99],['Lívia Laço','CAB-LIVIA-LACO','Sandália de cabedal','',33.99],
-    ['Lívia Borboleta','CAB-LIVIA-BORB','Sandália de cabedal','',36.63],['Lívia Strass','CAB-LIVIA-STRASS','Sandália de cabedal','',34.63],
-    ['Ágata','CAB-AGATA','Sandália de cabedal','',34.65],['Carol','CAB-CAROL','Sandália de cabedal','',33.99],
-    ['Tênis Cacharrel','TENIS-CACHARREL','Tênis','',34.49],['Tênis Nylon','TENIS-NYLON','Tênis','',32.99]
-  ]
-  for (const [name, sku, category, color, price] of extraProducts) await tx`INSERT INTO products (name,sku,category,color,current_price)
-    VALUES (${name},${sku},${category},${color || null},${price}) ON CONFLICT (sku) DO NOTHING`
-  const links: Record<string,string[]> = {
-    'CAB-LIVIA-FLOR':['Base cabedal Lívia','Enfeite Flor/Laço/Borboleta'], 'CAB-LIVIA-LACO':['Base cabedal Lívia','Enfeite Flor/Laço/Borboleta'],
-    'CAB-LIVIA-BORB':['Base cabedal Lívia','Enfeite Flor/Laço/Borboleta'], 'CAB-LIVIA-STRASS':['Base cabedal Lívia','Enfeite Strass Lívia'],
-    'CAB-AGATA':['Base cabedal Lívia','Enfeite Ágata'], 'CAB-CAROL':['Base cabedal Lívia','Enfeite Carol'],
-    'TENIS-CACHARREL':['Palmilha corte tênis','Montagem tênis','Corte cabedal tênis','Embalagem Shopee','Waster','Sola All Star','Pesponto tênis','Caixa para tênis','Enfeite emborrachado','Cabedal cacharrel','Palmilha EVA forrada'],
-    'TENIS-NYLON':['Palmilha corte tênis','Montagem tênis','Corte cabedal tênis','Embalagem Shopee','Waster','Sola All Star','Pesponto tênis','Caixa para tênis','Cabedal nylon','Palmilha EVA forrada']
-  }
-  for (const [sku, names] of Object.entries(links)) for (const materialName of names) await tx`INSERT INTO product_components (product_id,material_id,quantity)
-    SELECT p.id,m.id,1 FROM products p,materials m WHERE p.sku=${sku} AND m.name=${materialName}
-    ON CONFLICT (product_id,material_id) DO NOTHING`
-}

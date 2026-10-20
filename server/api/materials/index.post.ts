@@ -3,7 +3,7 @@ export default defineEventHandler(async (event) => {
   const input = await validatedBody(event, materialSchema)
   const [row] = await db()`
     INSERT INTO materials (name, supplier, unit, purchase_price, purchase_quantity, active)
-    VALUES (${input.name}, ${input.supplier || null}, ${input.unit.toUpperCase()}, ${input.purchasePrice}, ${input.purchaseQuantity}, ${input.active})
+    VALUES (${input.name}, ${input.supplier || null}, ${input.unit.toUpperCase()}, ${input.purchasePrice}, ${input.yieldQuantity}, ${input.active})
     RETURNING id
   `
   setResponseStatus(event, 201)

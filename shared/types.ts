@@ -4,7 +4,7 @@ export type Material = {
   supplier: string | null
   unit: string
   purchasePrice: number
-  purchaseQuantity: number
+  yieldQuantity: number
   unitCost: number
   active: boolean
 }

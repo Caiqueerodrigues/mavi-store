@@ -342,7 +342,7 @@ async function api<T = any>(
     return response._data as T;
   } catch (error: any) {
     const status = Number(error?.status || error?.statusCode);
-    if ((status === 401 || status === 403) && retry && csrf()) {
+    if (status === 401 && retry && csrf()) {
       try {
         const refresh = await $fetch.raw("/api/auth/refresh", {
           method: "POST",
@@ -356,7 +356,7 @@ async function api<T = any>(
         throw error;
       }
     }
-    if (status === 401 || status === 403) forceLogin();
+    if (status === 401) forceLogin();
     throw error;
   }
 }
@@ -468,25 +468,46 @@ async function loadRememberedLogin() {
     localStorage.removeItem(rememberedLoginKey);
   }
 }
-async function loadAll() {
-  const jobs: Promise<any>[] = [
-    loadDashboard(),
-    loadOrders(),
-    fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v), true),
-    fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v), true),
-  ];
-  if (canCosts.value)
-    jobs.push(
-      api<Product[]>("/api/products").then((v) => (products.value = v)),
-      fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true),
-      fetchTablePage("channels", "/api/channels", () => channels.value, (v) => (channels.value = v), true),
-      api("/api/settings").then((v) => (settings.value = v)),
-    );
-  if (user.value?.role === "admin")
-    jobs.push(fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v), true));
-  if (canAudit.value)
-    jobs.push(loadAudit(true));
-  await Promise.all(jobs);
+async function loadRouteData(path = route.path) {
+  switch (path) {
+    case "/visao-geral":
+      await loadDashboard();
+      break;
+    case "/pedidos":
+      await Promise.all([
+        loadOrders(),
+        fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v), true),
+        fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v), true),
+      ]);
+      break;
+    case "/clientes":
+      await fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v), true);
+      break;
+    case "/produtos":
+      await Promise.all([
+        api<Product[]>("/api/products").then((v) => (products.value = v)),
+        fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true),
+      ]);
+      break;
+    case "/insumos":
+      await fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true);
+      break;
+    case "/parametrizacao/servicos":
+      await fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v), true);
+      break;
+    case "/parametrizacao/precificacao":
+      await Promise.all([
+        fetchTablePage("channels", "/api/channels", () => channels.value, (v) => (channels.value = v), true),
+        api("/api/settings").then((v) => (settings.value = v)),
+      ]);
+      break;
+    case "/usuarios":
+      await fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v), true);
+      break;
+    case "/auditoria":
+      await loadAudit(true);
+      break;
+  }
 }
 async function loadDashboard() {
   dashboard.value = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
@@ -506,12 +527,22 @@ onMounted(async () => {
     user.value = data.user;
     ensureAccessibleRoute();
     changeModal.value = data.user.mustChangePassword;
-    if (!data.user.mustChangePassword) await loadAll();
   } catch {
     await loadRememberedLogin();
     if (route.path !== "/login") router.replace("/login");
-  } finally {
     ready.value = true;
+    return;
+  }
+  ready.value = true;
+  if (!user.value.mustChangePassword) {
+    try {
+      await loadRouteData();
+    } catch (error: any) {
+      toast(
+        error?.data?.statusMessage ||
+          "Não foi possível carregar todos os dados. Tente novamente.",
+      );
+    }
   }
 });
 async function login() {
@@ -529,7 +560,7 @@ async function login() {
     user.value = data.user;
     ensureAccessibleRoute();
     changeModal.value = data.user.mustChangePassword;
-    if (!data.user.mustChangePassword) await loadAll();
+    if (!data.user.mustChangePassword) await loadRouteData();
   } catch (e: any) {
     if (!user.value)
       loginError.value = e?.data?.statusMessage || "Não foi possível entrar";
@@ -568,7 +599,7 @@ async function changePassword() {
       newPassword: "",
       confirmPassword: "",
     });
-    await loadAll();
+    await loadRouteData();
     toast("Senha alterada com sucesso.");
   } catch (e: any) {
     toast(e?.data?.statusMessage || "Revise os requisitos da senha");
@@ -580,7 +611,6 @@ function go(id: string) {
   const path = Object.entries(routeTabs).find(([, section]) => section === id)?.[0];
   if (path && path !== route.path) router.push(path);
   menuOpen.value = false;
-  if (id === "audit") loadAudit();
 }
 function goParameterTab(section: "services" | "pricing") {
   parameterTab.value = section;
@@ -604,7 +634,7 @@ function ensureAccessibleRoute() {
 }
 watch(
   () => route.path,
-  (path) => {
+  async (path) => {
     if (path === "/login") {
       if (user.value) router.replace("/visao-geral");
       return;
@@ -619,6 +649,16 @@ watch(
     tab.value = section;
     if (path === "/parametrizacao/precificacao") parameterTab.value = "pricing";
     if (path === "/parametrizacao/servicos") parameterTab.value = "services";
+    if (user.value && !user.value.mustChangePassword) {
+      try {
+        await loadRouteData(path);
+      } catch (error: any) {
+        toast(
+          error?.data?.statusMessage ||
+            "Não foi possível carregar os dados desta página.",
+        );
+      }
+    }
   },
 );
 const activeCustomers = computed(() =>
@@ -932,9 +972,14 @@ const materialModal = ref(false),
     supplier: "",
     unit: "UN",
     purchasePrice: 0,
-    purchaseQuantity: 1,
+    yieldQuantity: 1,
     active: true,
-  });
+  }),
+  materialUnitCostPreview = computed(() =>
+    Number(materialForm.yieldQuantity) > 0
+      ? Number(materialForm.purchasePrice) / Number(materialForm.yieldQuantity)
+      : 0,
+  );
 function editMaterial(item?: Material) {
   Object.assign(
     materialForm,
@@ -946,7 +991,7 @@ function editMaterial(item?: Material) {
           supplier: "",
           unit: "UN",
           purchasePrice: 0,
-          purchaseQuantity: 1,
+          yieldQuantity: 1,
           active: true,
         },
   );
@@ -1683,7 +1728,7 @@ async function saveServiceType() {
                 </td>
                 <td>{{ m.supplier || "—" }}</td>
                 <td>{{ money(m.purchasePrice) }}</td>
-                <td>{{ m.purchaseQuantity }} {{ m.unit }}</td>
+                <td>{{ m.yieldQuantity }} {{ m.unit }} por compra</td>
                 <td>
                   <strong>{{ money(m.unitCost) }} / {{ m.unit }}</strong>
                 </td>
@@ -2381,7 +2426,7 @@ async function saveServiceType() {
         ><label>Fornecedor<input v-model="materialForm.supplier" /></label>
         <div class="three-cols">
           <label
-            >Preço<input
+            >Preço da compra<input
               :value="money(materialForm.purchasePrice)"
               type="text"
               inputmode="numeric"
@@ -2389,11 +2434,12 @@ async function saveServiceType() {
                 currencyInput($event, materialForm, 'purchasePrice')
               " /></label
           ><label
-            >Rendimento<input
-              v-model.number="materialForm.purchaseQuantity"
+            >Rendimento por compra<input
+              v-model.number="materialForm.yieldQuantity"
               type="number"
               min=".0001"
-              step=".0001" /></label
+              step=".0001"
+              required /></label
           ><label
             >Unidade<select v-model="materialForm.unit">
               <option>UN</option>
@@ -2401,8 +2447,22 @@ async function saveServiceType() {
               <option>MT</option>
               <option>KG</option>
               <option>PCT</option>
+              <option>CHAPA</option>
+              <option>FOLHA</option>
+              <option>ROLO</option>
+              <option>LT</option>
+              <option>ML</option>
+              <option>CM</option>
+              <option>CX</option>
             </select></label
           >
+        </div>
+        <div class="product-total">
+          <span>
+            Custo calculado por {{ materialForm.unit }}
+            <small>Preço da compra ÷ rendimento</small>
+          </span>
+          <strong>{{ money(materialUnitCostPreview) }}</strong>
         </div>
         <div class="modal-actions">
           <button

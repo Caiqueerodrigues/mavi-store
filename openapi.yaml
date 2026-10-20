@@ -203,13 +203,13 @@ components:
   schemas:
     MaterialInput:
       type: object
-      required: [name, unit, purchasePrice, purchaseQuantity]
+      required: [name, unit, purchasePrice, yieldQuantity]
       properties:
         name: { type: string, minLength: 2, example: Manta strass }
         supplier: { type: [string, 'null'], example: Compofram }
         unit: { type: string, example: MT }
         purchasePrice: { type: number, minimum: 0, example: 16 }
-        purchaseQuantity: { type: number, exclusiveMinimum: 0, example: 1 }
+        yieldQuantity: { type: number, exclusiveMinimum: 0, example: 65, description: Quantidade de unidades, pares ou metros produzidos por uma compra }
         active: { type: boolean, default: true }
     Material:
       allOf:
@@ -218,7 +218,7 @@ components:
           required: [id, unitCost]
           properties:
             id: { type: integer }
-            unitCost: { type: number, description: purchasePrice / purchaseQuantity }
+            unitCost: { type: number, description: purchasePrice / yieldQuantity }
     ComponentInput:
       type: object
       required: [materialId, quantity]

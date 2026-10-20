@@ -43,6 +43,13 @@
       "when": 1792182707022,
       "tag": "0005_sequential_order_number",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792378800000,
+      "tag": "0006_spreadsheet_catalog",
+      "breakpoints": true
     }
   ]
 }

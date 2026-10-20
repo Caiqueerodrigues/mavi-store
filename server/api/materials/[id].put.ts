@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const input = await validatedBody(event, materialSchema)
   const rows = await db()`
     UPDATE materials SET name=${input.name}, supplier=${input.supplier || null}, unit=${input.unit.toUpperCase()},
-      purchase_price=${input.purchasePrice}, purchase_quantity=${input.purchaseQuantity}, active=${input.active}, updated_at=NOW()
+      purchase_price=${input.purchasePrice}, purchase_quantity=${input.yieldQuantity}, active=${input.active}, updated_at=NOW()
     WHERE id=${id} RETURNING id
   `
   if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'Insumo não encontrado' })
