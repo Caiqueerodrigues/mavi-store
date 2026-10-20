@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   implantacao:
-    runs-on: alpine-docker
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -45,19 +45,27 @@ jobs:
           test -n "$ADMIN_INITIAL_PASSWORD" || { echo "O segredo ADMIN_INITIAL_PASSWORD é obrigatório"; exit 1; }
           test -n "$APP_ORIGIN" || { echo "A variável APP_ORIGIN é obrigatória"; exit 1; }
 
+      - name: Instalar cliente Docker e Compose
+        shell: bash
+        run: |
+          set -eu
+          apt-get update
+          apt-get install --yes --no-install-recommends docker.io docker-compose
+          rm -rf /var/lib/apt/lists/*
+
       - name: Validar Docker do runner
-        shell: sh
+        shell: bash
         run: |
           set -eu
           command -v docker >/dev/null || { echo "O comando docker não está instalado no runner"; exit 1; }
-          docker compose version >/dev/null || { echo "O plugin docker compose não está instalado no runner"; exit 1; }
+          command -v docker-compose >/dev/null || { echo "O Docker Compose não está instalado no runner"; exit 1; }
           docker info >/dev/null || { echo "O runner não possui acesso ao daemon do Docker"; exit 1; }
 
       - name: Construir imagem
         run: docker build --pull --tag "$APP_IMAGE" .
 
       - name: Implantar container
-        run: docker compose up --detach --no-build --remove-orphans app
+        run: docker-compose up --detach --no-build --remove-orphans app
 
       - name: Verificar saúde da aplicação
         shell: bash
@@ -69,5 +77,5 @@ jobs:
             fi
             sleep 2
           done
-          docker compose logs --tail=100 app
+          docker-compose logs --tail=100 app
           exit 1
