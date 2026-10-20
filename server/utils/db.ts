@@ -16,8 +16,37 @@ export function db() {
 }
 
 export function ensureDatabase() {
-  if (!ready) ready = migrateAndSeed()
+  if (!ready) ready = createDatabaseIfNeeded().then(migrateAndSeed)
   return ready
+}
+
+async function createDatabaseIfNeeded() {
+  const config = useRuntimeConfig()
+  const adminUrl = String(config.databaseAdminUrl || '')
+  if (!adminUrl) return
+
+  const targetUrl = new URL(String(config.databaseUrl))
+  const databaseName = decodeURIComponent(targetUrl.pathname.replace(/^\//, ''))
+  const ownerName = decodeURIComponent(targetUrl.username)
+  if (!databaseName || !ownerName || databaseName.includes('\u0000') || ownerName.includes('\u0000')) {
+    throw new Error('NUXT_DATABASE_URL deve informar usuario e nome de banco validos')
+  }
+
+  const admin = postgres(adminUrl, { max: 1, prepare: false })
+  try {
+    const existing = await admin`SELECT 1 FROM pg_database WHERE datname = ${databaseName}`
+    if (existing.length === 0) {
+      const quotedName = `"${databaseName.replace(/"/g, '""')}"`
+      const quotedOwner = `"${ownerName.replace(/"/g, '""')}"`
+      try {
+        await admin.unsafe(`CREATE DATABASE ${quotedName} OWNER ${quotedOwner}`)
+      } catch (error: any) {
+        if (error?.code !== '42P04') throw error
+      }
+    }
+  } finally {
+    await admin.end()
+  }
 }
 
 async function migrateAndSeed() {

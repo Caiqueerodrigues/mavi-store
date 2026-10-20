@@ -1,24 +1,34 @@
 # Mavi
 
-Sistema integrado de custos, pedidos, relatórios PDF, usuários e auditoria, inspirado na planilha de controle existente. O frontend Vue, as APIs Nitro do Nuxt e o PostgreSQL podem rodar juntos via Docker ou com o Nuxt localmente.
+Sistema integrado de custos, pedidos, relatórios PDF, usuários e auditoria. O frontend Vue e as APIs Nitro do Nuxt rodam via Docker e usam um servidor PostgreSQL externo já existente.
 
 ## Executar
+
+Configure no `.env` as conexões com o PostgreSQL existente:
+
+```dotenv
+NUXT_DATABASE_URL=postgres://usuario_app:senha@servidor:5432/calcados?sslmode=require
+NUXT_DATABASE_ADMIN_URL=postgres://usuario_admin:senha@servidor:5432/postgres?sslmode=require
+```
+
+`NUXT_DATABASE_ADMIN_URL` deve apontar para um banco que já exista no mesmo servidor, normalmente `postgres`, usando uma role com permissão `CREATEDB`. `NUXT_DATABASE_URL` aponta para o banco exclusivo da aplicação.
 
 ```bash
 docker compose up --build
 ```
 
-Acesse <http://localhost:3001>. O banco é criado e recebe dados iniciais automaticamente na primeira execução. Para usar outra porta, defina `APP_PORT` no arquivo `.env`.
+Acesse <http://localhost:3001>. O Compose sobe somente a aplicação; ele não cria outro container PostgreSQL. Na primeira execução, a aplicação cria o banco informado em `NUXT_DATABASE_URL`, caso necessário, e aplica as migrações e os dados iniciais.
+
+Para usar outra porta HTTP, defina `APP_PORT` no `.env`.
 
 ## Desenvolvimento local
 
 ```bash
 corepack pnpm install
-docker compose up -d db
 npm run dev
 ```
 
-No desenvolvimento, somente o PostgreSQL roda em Docker na porta `5433`; o Nuxt roda localmente. Para parar o banco: `docker compose down`. O volume `postgres_data` preserva os dados.
+O Nuxt acessa o mesmo PostgreSQL externo configurado no `.env`.
 
 ## Primeiro acesso
 
@@ -26,7 +36,7 @@ No desenvolvimento, somente o PostgreSQL roda em Docker na porta `5433`; o Nuxt 
 - Senha temporária: valor de `ADMIN_INITIAL_PASSWORD` no `.env`
 - O sistema exige a troca da senha no primeiro login.
 
-Em produção, substitua os segredos JWT, a senha do PostgreSQL e a senha inicial, ative `COOKIE_SECURE=true` e publique exclusivamente atrás de HTTPS.
+Em produção, substitua os segredos JWT e a senha inicial, ative `COOKIE_SECURE=true`, exija TLS na conexão PostgreSQL e publique exclusivamente atrás de HTTPS. A conexão normal da aplicação deve usar uma role sem permissão para criar bancos.
 
 ## Segurança e permissões
 
@@ -36,4 +46,4 @@ Access token de 15 minutos e refresh token rotativo de 1 dia ficam em cookies `H
 
 O seed inclui modelos das abas `Tiras`, `Cabedal` e `Tenis`, com suas composições e custos. A planilha original é apenas consultada e nunca alterada.
 
-O contrato da API está em `openapi.yaml`. A planilha original não é lida nem alterada pela aplicação.
+O contrato da API está em `openapi.yaml`.

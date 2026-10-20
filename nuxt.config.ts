@@ -5,6 +5,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/theme.css', '~/assets/css/main.css'],
   runtimeConfig: {
     databaseUrl: 'postgres://calcados:calcados@localhost:5432/calcados',
+    databaseAdminUrl: '',
     jwtAccessSecret: 'development-access-secret-change-me-32chars',
     jwtRefreshSecret: 'development-refresh-secret-change-me-32chars',
     adminInitialPassword: '',
