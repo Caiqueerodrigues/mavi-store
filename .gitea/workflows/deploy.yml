@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   implantacao:
-    runs-on: ubuntu-latest
+    runs-on: alpine-docker
     timeout-minutes: 20
     permissions:
       contents: read
@@ -44,6 +44,14 @@ jobs:
           test -n "$JWT_REFRESH_SECRET" || { echo "O segredo JWT_REFRESH_SECRET é obrigatório"; exit 1; }
           test -n "$ADMIN_INITIAL_PASSWORD" || { echo "O segredo ADMIN_INITIAL_PASSWORD é obrigatório"; exit 1; }
           test -n "$APP_ORIGIN" || { echo "A variável APP_ORIGIN é obrigatória"; exit 1; }
+
+      - name: Validar Docker do runner
+        shell: sh
+        run: |
+          set -eu
+          command -v docker >/dev/null || { echo "O comando docker não está instalado no runner"; exit 1; }
+          docker compose version >/dev/null || { echo "O plugin docker compose não está instalado no runner"; exit 1; }
+          docker info >/dev/null || { echo "O runner não possui acesso ao daemon do Docker"; exit 1; }
 
       - name: Construir imagem
         run: docker build --pull --tag "$APP_IMAGE" .
