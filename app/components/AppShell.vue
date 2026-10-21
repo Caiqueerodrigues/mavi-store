@@ -358,9 +358,14 @@ async function api<T = any>(
     throw error;
   }
 }
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function toast(message: string) {
+  if (toastTimer) clearTimeout(toastTimer);
   notice.value = message;
-  setTimeout(() => (notice.value = ""), 3200);
+  toastTimer = setTimeout(() => {
+    notice.value = "";
+    toastTimer = undefined;
+  }, 3200);
 }
 type ConfirmationRequest = {
   title: string;

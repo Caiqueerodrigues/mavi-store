@@ -21,6 +21,7 @@ jobs:
 
     env:
       APP_IMAGE: mavi:${{ gitea.sha }}
+      MIGRATION_IMAGE: mavi-migration:${{ gitea.sha }}
       APP_PORT: ${{ vars.APP_PORT || '3001' }}
       DOCKER_NETWORK: ${{ vars.DOCKER_NETWORK }}
       NUXT_DATABASE_URL: ${{ secrets.NUXT_DATABASE_URL }}
@@ -52,7 +53,30 @@ jobs:
           docker info >/dev/null || { echo "O runner não possui acesso ao daemon do Docker"; exit 1; }
 
       - name: Construir imagem
-        run: docker build --pull --tag "$APP_IMAGE" .
+        shell: bash
+        run: |
+          set -eu
+          docker build --pull --target migration --tag "$MIGRATION_IMAGE" .
+          docker build --target runtime --tag "$APP_IMAGE" .
+
+      - name: Aplicar migrations
+        shell: bash
+        run: |
+          set -eu
+          argumentos_rede=()
+          if [ -n "${DOCKER_NETWORK:-}" ]; then
+            docker network inspect "$DOCKER_NETWORK" >/dev/null || {
+              echo "A rede Docker $DOCKER_NETWORK não existe"
+              exit 1
+            }
+            argumentos_rede=(--network "$DOCKER_NETWORK")
+          fi
+          docker run --rm \
+            "${argumentos_rede[@]}" \
+            --env NUXT_DATABASE_URL \
+            --env NUXT_DATABASE_ADMIN_URL \
+            --env NUXT_APP_TIME_ZONE="America/Sao_Paulo" \
+            "$MIGRATION_IMAGE"
 
       - name: Implantar container
         shell: bash
@@ -101,4 +125,8 @@ jobs:
           exit 1
 
       - name: Limpar imagens Docker antigas
-        run: docker image prune --all --force --filter "until=168h"
+        if: always()
+        shell: bash
+        run: |
+          docker image rm "$MIGRATION_IMAGE" >/dev/null 2>&1 || true
+          docker image prune --all --force --filter "until=168h"

@@ -5,7 +5,7 @@ Todas as alterações de schema e dados de referência devem ser feitas por migr
 Comandos:
 
 - `npm run db:generate`: gera uma nova migration a partir de `server/database/schema.ts`.
-- `npm run db:migrate`: aplica as migrations pendentes.
+- `pnpm db:migrate`: inicializa o schema necessário e aplica as migrations pendentes. O workflow de deploy executa esse comando antes de trocar a aplicação em produção.
 
 Nunca altere uma migration que já tenha sido aplicada em ambientes compartilhados. Atualize o schema do Drizzle, gere uma nova migration e revise o SQL antes de aplicá-la.
 

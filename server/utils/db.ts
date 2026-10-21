@@ -7,12 +7,32 @@ import { resolve } from 'node:path'
 let client: ReturnType<typeof postgres> | undefined
 let ready: Promise<void> | undefined
 
+function runtimeDatabaseConfig() {
+  try {
+    return useRuntimeConfig()
+  } catch {
+    return {
+      databaseUrl: process.env.NUXT_DATABASE_URL,
+      databaseAdminUrl: process.env.NUXT_DATABASE_ADMIN_URL,
+      appTimeZone: process.env.NUXT_APP_TIME_ZONE || 'America/Sao_Paulo'
+    }
+  }
+}
+
 export function db() {
   if (!client) {
-    const config = useRuntimeConfig()
+    const config = runtimeDatabaseConfig()
+    if (!config.databaseUrl) throw new Error('NUXT_DATABASE_URL é obrigatório para acessar o banco')
     client = postgres(config.databaseUrl, { max: 10, prepare: false, transform: postgres.camel, connection: { TimeZone: String(config.appTimeZone || 'America/Sao_Paulo') } })
   }
   return client
+}
+
+export async function closeDatabase() {
+  if (!client) return
+  await client.end()
+  client = undefined
+  ready = undefined
 }
 
 export function ensureDatabase() {
@@ -26,7 +46,7 @@ export function ensureDatabase() {
 }
 
 async function createDatabaseIfNeeded() {
-  const config = useRuntimeConfig()
+  const config = runtimeDatabaseConfig()
   const adminUrl = String(config.databaseAdminUrl || '')
   if (!adminUrl) return
 

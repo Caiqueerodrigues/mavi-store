@@ -14,7 +14,7 @@
     "preview": "nuxt preview --host 0.0.0.0",
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "tsx server/database/migrate.ts"
   },
   "dependencies": {
     "@nuxt/icon": "^1.15.0",
@@ -31,6 +31,7 @@
     "@iconify-json/lucide": "^1.2.147",
     "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.11",
+      "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "vue-tsc": "^3.0.0"
   }
