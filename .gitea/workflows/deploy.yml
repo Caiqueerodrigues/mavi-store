@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 10); do
             if curl --fail --silent --show-error "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null; then
               exit 0
             fi
