@@ -28,6 +28,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.147",
     "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.11",
     "typescript": "^5.9.0",

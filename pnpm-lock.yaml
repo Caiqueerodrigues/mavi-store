@@ -36,6 +36,9 @@ importers:
         specifier: ^4.0.0
         version: 4.6.7
     devDependencies:
+      '@iconify-json/lucide':
+        specifier: ^1.2.147
+        version: 1.2.147
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -670,6 +673,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@iconify-json/lucide@1.2.147':
+    resolution: {integrity: sha512-7Qqa/joSBeUxihWsQJx5nKcqMWtV3YrH90Jldxcx4J9ciTLavRUlpexQwRTcx9dcb7CJpISfjZTj42zD/30sqA==}
 
   '@iconify/collections@1.0.752':
     resolution: {integrity: sha512-7VthYrhNzcAxNlBejT8RB1Jwq3z+6+6hE8t/VsAx1GjCCCQEKtmbywmGBamKMKKLY7vSt72c5JqhVpW1x0uUZQ==}
@@ -4108,6 +4114,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@iconify-json/lucide@1.2.147':
+    dependencies:
+      '@iconify/types': 2.0.0
 
   '@iconify/collections@1.0.752':
     dependencies:

@@ -131,7 +131,7 @@ const productCategory = ref(""),
         )
       : products.value,
   );
-const loginForm = reactive({ email: "admin@mavicustos.local", password: "" }),
+const loginForm = reactive({ email: "", password: "" }),
   rememberLogin = ref(false),
   passwordVisible = reactive({
     login: false,

@@ -2,6 +2,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
   modules: ['@nuxt/icon'],
+  icon: {
+    fallbackToApi: false,
+    serverBundle: {
+      collections: ['lucide']
+    }
+  },
   css: ['~/assets/css/theme.css', '~/assets/css/main.css'],
   runtimeConfig: {
     databaseUrl: 'postgres://calcados:calcados@localhost:5432/calcados',
