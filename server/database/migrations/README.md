@@ -9,4 +9,4 @@ Comandos:
 
 Nunca altere uma migration que já tenha sido aplicada em ambientes compartilhados. Atualize o schema do Drizzle, gere uma nova migration e revise o SQL antes de aplicá-la.
 
-O usuário administrador continua sendo um bootstrap condicionado à variável `ADMIN_INITIAL_PASSWORD`, pois sua senha precisa ser transformada em hash no ambiente de implantação.
+O usuário administrador é criado no primeiro startup com senha temporária e troca obrigatória.

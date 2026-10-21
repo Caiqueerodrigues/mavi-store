@@ -38,15 +38,13 @@ Cadastre em **Settings > Actions > Secrets**:
 - `NUXT_DATABASE_URL`: URL completa do banco PostgreSQL especifico da aplicacao;
 - `NUXT_DATABASE_ADMIN_URL`: URL administrativa opcional, usada somente para
   criar o banco quando ele ainda nao existe;
-- `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET`: chaves aleatorias distintas;
-- `ADMIN_INITIAL_PASSWORD`: senha inicial do administrador.
+- `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET`: chaves aleatorias distintas.
 
 Cadastre em **Settings > Actions > Variables**:
 
 - `APP_ORIGIN`: origem publica exata, por exemplo `https://mavi.exemplo.com`;
 - `APP_PORT`: porta publicada no host (opcional, padrao `3001`);
-- `COOKIE_SECURE` e `TRUST_PROXY` (opcionais, padrao `true` no CI);
-- `ADMIN_INITIAL_NAME` e `ADMIN_INITIAL_EMAIL` (opcionais).
+- `COOKIE_SECURE` e `TRUST_PROXY` (opcionais, padrao `true` no CI).
 
 A URL do banco e injetada somente quando o container inicia; ela nao e gravada
 na imagem. Se o banco especifico ja existir e a role da aplicacao puder aplicar
@@ -63,12 +61,12 @@ O Nuxt acessa o mesmo PostgreSQL externo configurado no `.env`.
 
 ## Primeiro acesso
 
-- E-mail: valor de `ADMIN_INITIAL_EMAIL` no `.env` (por padrão, `caiquerodriguesalmeida@gmail.com`)
-- Nome: valor de `ADMIN_INITIAL_NAME` no `.env`
-- Senha temporária: valor de `ADMIN_INITIAL_PASSWORD` no `.env`
+- E-mail: `caiquerodriguesalmeida@gmail.com`
+- Nome: `Caique Rodrigues Almeida`
+- Senha temporária: `Teste@123`
 - O sistema exige a troca da senha no primeiro login.
 
-Em produção, substitua os segredos JWT e a senha inicial, ative `COOKIE_SECURE=true`, exija TLS na conexão PostgreSQL e publique exclusivamente atrás de HTTPS. A conexão normal da aplicação deve usar uma role sem permissão para criar bancos.
+Em produção, substitua os segredos JWT, ative `COOKIE_SECURE=true`, exija TLS na conexão PostgreSQL e publique exclusivamente atrás de HTTPS. A conexão normal da aplicação deve usar uma role sem permissão para criar bancos.
 
 ## Segurança e permissões
 

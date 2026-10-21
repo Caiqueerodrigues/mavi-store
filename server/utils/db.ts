@@ -184,16 +184,13 @@ async function migrateAndSeed() {
 }
 
 async function secureInitialAdmin(sql: ReturnType<typeof postgres>) {
-  const config = useRuntimeConfig()
-  const initialPassword = String(config.adminInitialPassword || '')
-  const initialName = String(config.adminInitialName || '').trim()
-  const initialEmail = String(config.adminInitialEmail || '').trim().toLowerCase()
+  const initialPassword = 'Teste@123'
+  const initialName = 'Caique Rodrigues Almeida'
+  const initialEmail = 'caiquerodriguesalmeida@gmail.com'
   const compromisedSeedHash = '$2b$12$pqz5SplEj6MKNLthaTkhNO03QJ4vevQdTpf6GsKu0XDNKFlRUFhhu'
   const [seeded] = await sql`SELECT id FROM users WHERE password_hash=${compromisedSeedHash} LIMIT 1`
   const [adminCount] = await sql`SELECT COUNT(*)::int AS count FROM users WHERE role='admin' AND active=TRUE AND deleted_at IS NULL`
-  if ((seeded || Number(adminCount?.count || 0) === 0) && (!isStrongPassword(initialPassword) || !initialName || !/^\S+@\S+\.\S+$/.test(initialEmail)))
-    throw new Error('ADMIN_INITIAL_NAME, ADMIN_INITIAL_EMAIL e uma ADMIN_INITIAL_PASSWORD forte sao obrigatorios para o administrador inicial')
-  if (!initialPassword) return
+  if (!seeded && Number(adminCount?.count || 0) > 0) return
 
   const passwordHash = await hash(initialPassword, 12)
   if (seeded)
@@ -201,9 +198,5 @@ async function secureInitialAdmin(sql: ReturnType<typeof postgres>) {
   if (Number(adminCount?.count || 0) === 0)
     await sql`INSERT INTO users (name, email, password_hash, role, must_change_password)
       VALUES (${initialName}, ${initialEmail}, ${passwordHash}, 'admin', TRUE)`
-}
-
-function isStrongPassword(value: string) {
-  return value.length >= 12 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /[0-9]/.test(value) && /[^A-Za-z0-9]/.test(value)
 }
 

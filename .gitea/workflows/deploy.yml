@@ -13,6 +13,8 @@ concurrency:
 jobs:
   implantacao:
     runs-on: ubuntu-latest
+    container:
+      image: docker.gitea.com/runner-images:ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -25,9 +27,6 @@ jobs:
       NUXT_DATABASE_ADMIN_URL: ${{ secrets.NUXT_DATABASE_ADMIN_URL }}
       JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
       JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
-      ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
-      ADMIN_INITIAL_NAME: ${{ vars.ADMIN_INITIAL_NAME || 'Caique Rodrigues Almeida' }}
-      ADMIN_INITIAL_EMAIL: ${{ vars.ADMIN_INITIAL_EMAIL || 'caiquerodriguesalmeida@gmail.com' }}
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
       COOKIE_SECURE: ${{ vars.COOKIE_SECURE || 'true' }}
       TRUST_PROXY: ${{ vars.TRUST_PROXY || 'true' }}
@@ -43,16 +42,7 @@ jobs:
           test -n "$NUXT_DATABASE_URL" || { echo "O segredo NUXT_DATABASE_URL é obrigatório"; exit 1; }
           test -n "$JWT_ACCESS_SECRET" || { echo "O segredo JWT_ACCESS_SECRET é obrigatório"; exit 1; }
           test -n "$JWT_REFRESH_SECRET" || { echo "O segredo JWT_REFRESH_SECRET é obrigatório"; exit 1; }
-          test -n "$ADMIN_INITIAL_PASSWORD" || { echo "O segredo ADMIN_INITIAL_PASSWORD é obrigatório"; exit 1; }
           test -n "$APP_ORIGIN" || { echo "A variável APP_ORIGIN é obrigatória"; exit 1; }
-
-      - name: Instalar cliente Docker
-        shell: bash
-        run: |
-          set -eu
-          apt-get update
-          apt-get install --yes --no-install-recommends docker.io
-          rm -rf /var/lib/apt/lists/*
 
       - name: Validar Docker do runner
         shell: bash
@@ -88,9 +78,6 @@ jobs:
             --env NUXT_DATABASE_ADMIN_URL \
             --env NUXT_JWT_ACCESS_SECRET="$JWT_ACCESS_SECRET" \
             --env NUXT_JWT_REFRESH_SECRET="$JWT_REFRESH_SECRET" \
-            --env NUXT_ADMIN_INITIAL_PASSWORD="$ADMIN_INITIAL_PASSWORD" \
-            --env NUXT_ADMIN_INITIAL_NAME="$ADMIN_INITIAL_NAME" \
-            --env NUXT_ADMIN_INITIAL_EMAIL="$ADMIN_INITIAL_EMAIL" \
             --env NUXT_COOKIE_SECURE="$COOKIE_SECURE" \
             --env NUXT_APP_ORIGIN="$APP_ORIGIN" \
             --env NUXT_TRUST_PROXY="$TRUST_PROXY" \
