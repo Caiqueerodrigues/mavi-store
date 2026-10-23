@@ -54,6 +54,7 @@ const ready = ref(false),
   router = useRouter(),
   routeTabs: Record<string, string> = {
     "/visao-geral": "dashboard",
+    "/servicos": "orders",
     "/pedidos": "orders",
     "/clientes": "customers",
     "/produtos": "products",
@@ -71,6 +72,7 @@ const dashboard = ref<any>(null),
   orders = ref<Order[]>([]),
   customers = ref<Customer[]>([]),
   serviceTypes = ref<ServiceType[]>([]),
+  orderServiceTypes = ref<ServiceType[]>([]),
   products = ref<Product[]>([]),
   materials = ref<Material[]>([]),
   channels = ref<Channel[]>([]),
@@ -79,6 +81,14 @@ const dashboard = ref<any>(null),
   auditData = ref<any>({ items: [], total: 0 });
 const tablePages = reactive<Record<string, { offset: number; total: number; loading: boolean }>>({});
 const tablePageSize = 50;
+const tableFilters = reactive({
+  customers: { search: "", active: "", sort: "name", direction: "asc" },
+  materials: { search: "", active: "", costType: "", sort: "name", direction: "asc" },
+  serviceTypes: { search: "", active: "", sort: "name", direction: "asc" },
+  channels: { search: "", active: "", sort: "name", direction: "asc" },
+  users: { search: "", active: "", role: "", sort: "name", direction: "asc" },
+  audit: { search: "", sort: "createdAt", direction: "desc" },
+});
 async function fetchTablePage<T>(key: string, url: string, getRows: () => T[], setRows: (rows: T[]) => void, reset = false) {
   const state = tablePages[key] ||= { offset: 0, total: 0, loading: false };
   if (state.loading || (!reset && state.offset >= state.total && state.total > 0)) return;
@@ -102,35 +112,49 @@ function tableScroll(key: string, event: Event, load: () => Promise<void>) {
 function loadNextTable(key: string) {
   const requests: Record<string, () => Promise<void>> = {
     orders: () => fetchTablePage("orders", `/api/orders?${new URLSearchParams(orderFilters)}`, () => orders.value, (v) => (orders.value = v)),
-    customers: () => fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v)),
-    materials: () => fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v)),
-    serviceTypes: () => fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v)),
-    channels: () => fetchTablePage("channels", "/api/channels", () => channels.value, (v) => (channels.value = v)),
-    users: () => fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v)),
+    customers: () => loadFilteredTable("customers", false),
+    materials: () => loadFilteredTable("materials", false),
+    serviceTypes: () => loadFilteredTable("serviceTypes", false),
+    channels: () => loadFilteredTable("channels", false),
+    users: () => loadFilteredTable("users", false),
     audit: () => loadAuditPage(false),
   };
   return requests[key]?.() || Promise.resolve();
 }
+function loadFilteredTable(key: "customers" | "materials" | "serviceTypes" | "channels" | "users", reset = true) {
+  const config = {
+    customers: { path: "/api/customers", rows: customers },
+    materials: { path: "/api/materials", rows: materials },
+    serviceTypes: { path: "/api/service-types", rows: serviceTypes },
+    channels: { path: "/api/channels", rows: channels },
+    users: { path: "/api/users", rows: users },
+  }[key];
+  const params = new URLSearchParams(tableFilters[key]);
+  return fetchTablePage<any>(key, `${config.path}?${params}`, () => config.rows.value, (value) => (config.rows.value = value), reset);
+}
+async function resetTableFilters(key: "customers" | "materials" | "serviceTypes" | "channels" | "users") {
+  Object.keys(tableFilters[key]).filter((field) => !["sort", "direction"].includes(field)).forEach((field) => ((tableFilters[key] as any)[field] = ""));
+  await loadFilteredTable(key);
+}
+function sortIcon(filters: { sort: string; direction: string }, column: string) {
+  return filters.sort === column ? (filters.direction === "asc" ? "lucide:arrow-up" : "lucide:arrow-down") : "lucide:arrow-up-down";
+}
+async function sortTable(key: "orders" | "customers" | "materials" | "serviceTypes" | "channels" | "users" | "audit", column: string) {
+  const filters: any = key === "orders" ? orderFilters : tableFilters[key];
+  filters.direction = filters.sort === column && filters.direction === "asc" ? "desc" : "asc";
+  filters.sort = column;
+  if (key === "orders") await loadOrders();
+  else if (key === "audit") await loadAudit();
+  else await loadFilteredTable(key);
+}
 const dashboardFilters = reactive({ from: "", to: "" }),
-  orderFilters = reactive({ from: "", to: "", status: "", paymentStatus: "" });
+  orderFilters = reactive({ search: "", from: "", to: "", status: "", paymentStatus: "", sort: "orderDate", direction: "desc" });
 const productCategory = ref(""),
+  productStatus = ref("all"),
   parameterTab = ref<"services" | "pricing">(
     route.path.endsWith("/precificacao") ? "pricing" : "services",
   ),
-  productCategories = computed(() =>
-    [
-      ...new Set(
-        products.value.map((product) => product.category).filter(Boolean),
-      ),
-    ].sort((a, b) => a.localeCompare(b, "pt-BR")),
-  ),
-  filteredProducts = computed(() =>
-    productCategory.value
-      ? products.value.filter(
-          (product) => product.category === productCategory.value,
-        )
-      : products.value,
-  );
+  productCategories = ref<string[]>([]);
 const loginForm = reactive({ email: "", password: "" }),
   rememberLogin = ref(false),
   passwordVisible = reactive({
@@ -152,6 +176,12 @@ const roleLabels: Record<Role, string> = {
     manager: "Gestor",
     operator: "Operador",
     viewer: "Consulta",
+  },
+  costTypeLabels: Record<string, string> = {
+    material: "Matéria-prima",
+    labor: "Mão de obra",
+    service: "Serviço",
+    packaging: "Embalagem",
   },
   statusLabels: Record<string, string> = {
     pending: "Pendente",
@@ -229,8 +259,8 @@ const nav = computed(() =>
     },
     {
       id: "orders",
-      label: "Pedidos",
-      icon: "lucide:clipboard-list",
+      label: "Serviços terceirizados",
+      icon: "lucide:handshake",
       show: true,
     },
     {
@@ -371,13 +401,14 @@ type ConfirmationRequest = {
   title: string;
   message: string;
   confirmLabel: string;
+  danger?: boolean;
 };
 const confirmation = ref<ConfirmationRequest | null>(null);
 let resolveConfirmation: ((confirmed: boolean) => void) | null = null;
-function confirmInModal(message: string, title: string, confirmLabel = "Confirmar") {
+function confirmInModal(message: string, title: string, confirmLabel = "Confirmar", danger = false) {
   return new Promise<boolean>((resolve) => {
     resolveConfirmation = resolve;
-    confirmation.value = { title, message, confirmLabel };
+    confirmation.value = { title, message, confirmLabel, danger };
   });
 }
 function settleConfirmation(confirmed: boolean) {
@@ -476,6 +507,7 @@ async function loadRouteData(path = route.path) {
     case "/visao-geral":
       await loadDashboard();
       break;
+    case "/servicos":
     case "/pedidos":
       await Promise.all([
         loadOrders(),
@@ -484,33 +516,42 @@ async function loadRouteData(path = route.path) {
       ]);
       break;
     case "/clientes":
-      await fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v), true);
+      await loadFilteredTable("customers");
       break;
     case "/produtos":
       await Promise.all([
-        api<Product[]>("/api/products").then((v) => (products.value = v)),
+        loadProductOptions(),
+        loadProducts(),
         fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true),
       ]);
       break;
     case "/insumos":
-      await fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true);
+      await loadFilteredTable("materials");
       break;
     case "/parametrizacao/servicos":
-      await fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v), true);
+      await loadFilteredTable("serviceTypes");
       break;
     case "/parametrizacao/precificacao":
       await Promise.all([
-        fetchTablePage("channels", "/api/channels", () => channels.value, (v) => (channels.value = v), true),
+        loadFilteredTable("channels"),
         api("/api/settings").then((v) => (settings.value = v)),
       ]);
       break;
     case "/usuarios":
-      await fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v), true);
+      await loadFilteredTable("users");
       break;
     case "/auditoria":
       await loadAudit(true);
       break;
   }
+}
+async function loadProductOptions() {
+  productCategories.value = await api<string[]>("/api/products/categories");
+}
+async function loadProducts() {
+  const query = new URLSearchParams({ active: productStatus.value });
+  if (productCategory.value) query.set("category", productCategory.value);
+  products.value = await api<Product[]>(`/api/products?${query.toString()}`);
 }
 async function loadDashboard() {
   dashboard.value = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
@@ -521,7 +562,7 @@ async function loadOrders() {
 }
 async function resetOrderFilters() {
   const today = serverTime.value.slice(0, 10);
-  Object.assign(orderFilters, { from: today, to: today, status: "", paymentStatus: "" });
+  Object.assign(orderFilters, { search: "", from: today, to: today, status: "", paymentStatus: "" });
   await loadOrders();
 }
 onMounted(async () => {
@@ -665,11 +706,8 @@ watch(
   },
 );
 const activeCustomers = computed(() =>
-    customers.value.filter((item) => item.active),
-  ),
-  activeServiceTypes = computed(() =>
-    serviceTypes.value.filter((item) => item.active),
-  );
+  customers.value.filter((item) => item.active),
+);
 const selectedOrders = ref<number[]>([]),
   bulkAction = ref("");
 const orderModal = ref(false),
@@ -704,12 +742,22 @@ const gradeQuantity = computed(() =>
   dashboardServiceMax = computed(() =>
     Math.max(1, ...(dashboard.value?.byService || []).map((item: any) => Number(item.total))),
   ),
+  dashboardCustomerMax = computed(() =>
+    Math.max(1, ...(dashboard.value?.byCustomer || []).map((item: any) => Number(item.total))),
+  ),
   dashboardStatusMax = computed(() =>
     Math.max(1, ...(dashboard.value?.statuses || []).map((item: any) => Number(item.total))),
   );
-function editOrder(item?: Order) {
-  const firstCustomer = activeCustomers.value[0],
-    firstService = activeServiceTypes.value[0];
+async function editOrder(item?: Order) {
+  try {
+    orderServiceTypes.value = await api<ServiceType[]>(
+      "/api/service-types?active=true",
+    );
+  } catch (error: any) {
+    toast(error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.");
+    return;
+  }
+  const firstCustomer = activeCustomers.value[0];
   Object.assign(
     orderForm,
     item
@@ -719,15 +767,15 @@ function editOrder(item?: Order) {
           orderNumber: "",
           customerId: firstCustomer?.id || null,
           customerName: firstCustomer?.name || "",
-          serviceTypeId: firstService?.id || null,
-          orderType: firstService?.name || "",
+          serviceTypeId: null,
+          orderType: "",
           productDescription: "",
           material: "",
           color: "",
           orderDate: serverTime.value.slice(0, 10),
           dueDate: null,
           quantity: 1,
-          unitPrice: firstService?.basePrice || 0,
+          unitPrice: 0,
           paidAmount: 0,
           paymentStatus: "pending",
           status: "pending",
@@ -737,13 +785,17 @@ function editOrder(item?: Order) {
           notes: "",
         },
   );
+  if (!item) orderForm.sizes = [];
   orderModal.value = true;
 }
 function selectServiceType() {
-  const selected = activeServiceTypes.value.find(
+  const selected = orderServiceTypes.value.find(
     (item) => item.id === orderForm.serviceTypeId,
   );
-  if (selected) orderForm.unitPrice = selected.basePrice;
+  if (selected) {
+    orderForm.orderType = selected.name;
+    orderForm.unitPrice = selected.basePrice;
+  }
 }
 function addSize() {
   orderForm.sizes.push({ size: "", quantity: 1 });
@@ -756,7 +808,7 @@ async function saveOrder() {
       body: orderForm,
     });
     orderModal.value = false;
-    if (route.path !== "/pedidos") await router.push("/pedidos");
+    if (route.path !== "/servicos") await router.push("/servicos");
     tab.value = "orders";
     await Promise.all([loadOrders(), loadDashboard()]);
     await loadAudit();
@@ -795,7 +847,7 @@ async function cloneOrder(item: Order) {
   busy.value = true;
   try {
     await api(`/api/orders/${item.id}/clone`, { method: "POST" });
-    if (route.path !== "/pedidos") await router.push("/pedidos");
+    if (route.path !== "/servicos") await router.push("/servicos");
     tab.value = "orders";
     await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedido clonado.");
@@ -919,7 +971,7 @@ async function saveUser() {
       body: userForm,
     });
     userModal.value = false;
-    await fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v), true);
+    await loadFilteredTable("users");
     await loadAudit();
     toast("Usuário salvo.");
   } catch (e: any) {
@@ -931,7 +983,7 @@ async function saveUser() {
 async function deleteUser(item: User) {
   if (!(await confirmInModal(`Excluir ${item.name}?`, "Excluir usuário", "Excluir usuário"))) return;
   await api(`/api/users/${item.id}`, { method: "DELETE" });
-  await fetchTablePage("users", "/api/users", () => users.value, (v) => (users.value = v), true);
+  await loadFilteredTable("users");
   toast("Usuário removido.");
 }
 async function loadAudit(reset = true) {
@@ -950,7 +1002,8 @@ async function loadAuditPage(reset = false) {
   state.loading = true;
   try {
     const pageNumber = Math.floor(state.offset / tablePageSize) + 1;
-    const page = await api<any>(`/api/audit?page=${pageNumber}`);
+    const params = new URLSearchParams({ ...tableFilters.audit, page: String(pageNumber) });
+    const page = await api<any>(`/api/audit?${params}`);
     auditData.value = { ...page, items: reset ? page.items : [...auditData.value.items, ...page.items] };
     state.offset = pageNumber * page.limit;
     state.total = page.total;
@@ -969,10 +1022,12 @@ async function copyAuditDetails(details: unknown) {
   }
 }
 const materialModal = ref(false),
+  materialUsageQuantity = ref(1),
   materialForm = reactive<any>({
     id: 0,
     name: "",
     supplier: "",
+    costType: "material",
     unit: "UN",
     purchasePrice: 0,
     yieldQuantity: 1,
@@ -982,6 +1037,9 @@ const materialModal = ref(false),
     Number(materialForm.yieldQuantity) > 0
       ? Number(materialForm.purchasePrice) / Number(materialForm.yieldQuantity)
       : 0,
+  ),
+  materialUsageCostPreview = computed(
+    () => materialUnitCostPreview.value * Number(materialUsageQuantity.value || 0),
   );
 function editMaterial(item?: Material) {
   Object.assign(
@@ -992,13 +1050,18 @@ function editMaterial(item?: Material) {
           id: 0,
           name: "",
           supplier: "",
+          costType: "material",
           unit: "UN",
           purchasePrice: 0,
           yieldQuantity: 1,
           active: true,
         },
   );
+  materialUsageQuantity.value = materialForm.unit?.toUpperCase() === "PAR" ? 2 : 1;
   materialModal.value = true;
+}
+function setMaterialUsageDefault() {
+  materialUsageQuantity.value = materialForm.unit?.toUpperCase() === "PAR" ? 2 : 1;
 }
 async function saveMaterial() {
   await api(
@@ -1006,7 +1069,7 @@ async function saveMaterial() {
     { method: materialForm.id ? "PUT" : "POST", body: materialForm },
   );
   materialModal.value = false;
-  await fetchTablePage("materials", "/api/materials", () => materials.value, (v) => (materials.value = v), true);
+  await loadFilteredTable("materials");
   dashboard.value = await api("/api/dashboard");
   toast("Insumo salvo.");
 }
@@ -1028,6 +1091,11 @@ const productCostPreview = computed(() =>
 );
 function addProductComponent() {
   productForm.components.push({ materialId: null, quantity: 1, wastePercent: 0 });
+}
+function selectProductMaterial(component: any, materialId: number) {
+  const material = materials.value.find((item) => item.id === materialId);
+  component.quantity = material?.unit?.toUpperCase() === "PAR" ? 2 : 1;
+  component.wastePercent = 0;
 }
 function editProduct(item?: Product) {
   Object.assign(
@@ -1072,11 +1140,35 @@ async function saveProduct() {
       },
     });
     productModal.value = false;
-    products.value = await api("/api/products");
+    await loadProducts();
     dashboard.value = await api("/api/dashboard");
     toast("Produto salvo.");
   } catch (e: any) {
     toast(e?.data?.statusMessage || "Não foi possível salvar o produto");
+  } finally {
+    busy.value = false;
+  }
+}
+async function toggleProductActive(item: Product) {
+  const active = !item.active;
+  const confirmed = await confirmInModal(
+    active
+      ? `O produto “${item.name}” ficará ativo novamente e voltará a aparecer entre os produtos disponíveis.`
+      : `O produto “${item.name}” ficará inativo, mas o cadastro será mantido.`,
+    active ? "Ativar produto" : "Inativar produto",
+    active ? "Ativar produto" : "Inativar produto",
+    !active,
+  );
+  if (!confirmed) return;
+
+  busy.value = true;
+  try {
+    await api(`/api/products/${item.id}`, { method: "PATCH", body: { active } });
+    await loadProducts();
+    dashboard.value = await api("/api/dashboard");
+    toast(active ? "Produto ativado." : "Produto inativado.");
+  } catch (e: any) {
+    toast(e?.data?.statusMessage || "Não foi possível alterar a situação do produto");
   } finally {
     busy.value = false;
   }
@@ -1115,8 +1207,8 @@ async function saveChannel() {
       },
     });
     channelModal.value = false;
-    await fetchTablePage("channels", "/api/channels", () => channels.value, (v) => (channels.value = v), true);
-    products.value = await api("/api/products");
+    await loadFilteredTable("channels");
+    await loadProducts();
     dashboard.value = await api("/api/dashboard");
     toast("Canal de venda salvo.");
   } catch (e: any) {
@@ -1150,7 +1242,7 @@ async function saveCustomer() {
       { method: customerForm.id ? "PUT" : "POST", body: customerForm },
     );
     customerModal.value = false;
-    await fetchTablePage("customers", "/api/customers", () => customers.value, (v) => (customers.value = v), true);
+    await loadFilteredTable("customers");
     toast("Cliente salvo.");
   } catch (e: any) {
     toast(e?.data?.statusMessage || "Não foi possível salvar o cliente");
@@ -1182,7 +1274,7 @@ async function saveServiceType() {
       { method: serviceTypeForm.id ? "PUT" : "POST", body: serviceTypeForm },
     );
     serviceTypeModal.value = false;
-    await fetchTablePage("serviceTypes", "/api/service-types", () => serviceTypes.value, (v) => (serviceTypes.value = v), true);
+    await loadFilteredTable("serviceTypes");
     toast("Tipo de serviço salvo.");
   } catch (e: any) {
     toast(
@@ -1291,7 +1383,7 @@ async function saveServiceType() {
         <div class="hero">
           <div>
             <span class="eyebrow light">Resumo operacional</span>
-            <h2>Da ficha técnica ao pedido entregue.</h2>
+            <h2>Dos produtos aos serviços entregues.</h2>
             <p>
               Controle produção, valores e responsabilidades com histórico
               completo.
@@ -1305,7 +1397,7 @@ async function saveServiceType() {
               editOrder();
             "
           >
-            <Icon name="lucide:plus" />Novo pedido
+            <Icon name="lucide:plus" />Nova ordem de serviço
           </button>
         </div>
         <form class="panel period-filters" @submit.prevent="loadDashboard">
@@ -1319,7 +1411,7 @@ async function saveServiceType() {
               ><Icon name="lucide:clipboard-list"
             /></span>
             <div>
-              <small>Pedidos no período</small><strong>{{ dashboard?.summary?.orders || 0 }}</strong
+              <small>Serviços no período</small><strong>{{ dashboard?.summary?.orders || 0 }}</strong
               ><em>{{ brDate(dashboardFilters.from) }} a {{ brDate(dashboardFilters.to) }}</em>
             </div>
           </article>
@@ -1328,7 +1420,7 @@ async function saveServiceType() {
               ><Icon name="lucide:circle-dollar-sign"
             /></span>
             <div>
-              <small>Valor em pedidos</small
+              <small>Valor em serviços</small
               ><strong>{{
                 money(dashboard?.summary?.totalValue || 0)
               }}</strong
@@ -1356,7 +1448,7 @@ async function saveServiceType() {
               ><strong>{{
                 dashboard?.summary?.inProduction || 0
               }}</strong
-              ><em>pedidos em andamento</em>
+              ><em>serviços em andamento</em>
             </div>
           </article>
         </div>
@@ -1365,20 +1457,30 @@ async function saveServiceType() {
             <div class="panel-head"><div><span class="eyebrow">Faturamento</span><h3>Ganhos por tipo de serviço</h3></div><Icon name="lucide:chart-no-axes-column-increasing" class="panel-icon" /></div>
             <div class="bar-chart">
               <div v-for="item in dashboard?.byService || []" :key="item.name" class="bar-row">
-                <div><strong>{{ item.name }}</strong><small>{{ item.orders }} pedido(s) · {{ money(item.paid) }} pagos</small></div>
+                <div><strong>{{ item.name }}</strong><small>{{ item.orders }} serviço(s) · {{ money(item.paid) }} recebidos</small></div>
                 <span><i :style="{ width: `${(item.total / dashboardServiceMax) * 100}%` }" /></span><b>{{ money(item.total) }}</b>
               </div>
-              <div v-if="!dashboard?.byService?.length" class="empty">Nenhum pedido no período.</div>
+              <div v-if="!dashboard?.byService?.length" class="empty">Nenhum serviço no período.</div>
             </div>
           </div>
           <div class="panel chart-panel">
-            <div class="panel-head"><div><span class="eyebrow">Produção</span><h3>Pedidos por situação</h3></div><Icon name="lucide:chart-bar-big" class="panel-icon" /></div>
+            <div class="panel-head"><div><span class="eyebrow">Produção</span><h3>Serviços por situação</h3></div><Icon name="lucide:chart-bar-big" class="panel-icon" /></div>
             <div class="bar-chart status-chart">
               <div v-for="item in dashboard?.statuses || []" :key="item.name" class="bar-row">
                 <div><strong>{{ statusLabels[item.name] || item.name }}</strong></div>
                 <span><i :style="{ width: `${(item.total / dashboardStatusMax) * 100}%` }" /></span><b>{{ item.total }}</b>
               </div>
-              <div v-if="!dashboard?.statuses?.length" class="empty">Nenhum pedido no período.</div>
+              <div v-if="!dashboard?.statuses?.length" class="empty">Nenhum serviço no período.</div>
+            </div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-head"><div><span class="eyebrow">Clientes</span><h3>Serviços por cliente</h3></div><Icon name="lucide:users-round" class="panel-icon" /></div>
+            <div class="bar-chart">
+              <div v-for="item in dashboard?.byCustomer || []" :key="item.id || item.name" class="bar-row">
+                <div><strong>{{ item.name }}</strong><small>{{ item.orders }} serviço(s) · {{ money(item.paid) }} recebidos</small></div>
+                <span><i :style="{ width: `${(item.total / dashboardCustomerMax) * 100}%` }" /></span><b>{{ money(item.total) }}</b>
+              </div>
+              <div v-if="!dashboard?.byCustomer?.length" class="empty">Nenhum cliente com serviços no período.</div>
             </div>
           </div>
         </div>
@@ -1386,7 +1488,7 @@ async function saveServiceType() {
           <div class="panel-head">
             <div>
               <span class="eyebrow">Últimos registros</span>
-              <h3>Pedidos recentes</h3>
+              <h3>Serviços recentes</h3>
             </div>
             <button class="text-button" @click="go('orders')">
               Ver todos <Icon name="lucide:arrow-right" />
@@ -1412,7 +1514,7 @@ async function saveServiceType() {
               <span class="profit-pill">{{ statusLabels[o.status] }}</span>
             </div>
             <div v-if="!orders.length" class="empty">
-              Nenhum pedido cadastrado ainda.
+              Nenhum serviço cadastrado ainda.
             </div>
           </div>
         </div>
@@ -1420,9 +1522,9 @@ async function saveServiceType() {
       <section v-else-if="tab === 'orders'" class="content">
         <div class="section-head">
           <div>
-            <span class="eyebrow">Produção</span>
-            <h2>Pedidos e fichas</h2>
-            <p>Cadastre, clone, acompanhe e gere o relatório em PDF.</p>
+            <span class="eyebrow">Prestação de serviços</span>
+            <h2>Serviços terceirizados</h2>
+            <p>Registre o cliente, o tipo de serviço, a produção e o pagamento.</p>
           </div>
           <div class="head-actions">
             <button
@@ -1432,15 +1534,16 @@ async function saveServiceType() {
             >
               <Icon name="lucide:file-down" />PDF geral</button
             ><button v-if="canWriteOrders" class="button" @click="editOrder()">
-              <Icon name="lucide:plus" />Novo pedido
+              <Icon name="lucide:plus" />Nova ordem de serviço
             </button>
           </div>
         </div>
         <form class="panel order-filters" @submit.prevent="loadOrders">
+          <label>Buscar<input v-model.trim="orderFilters.search" type="search" placeholder="Cliente, serviço ou observação" /></label>
           <label>De<input v-model="orderFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
           <label>Até<input v-model="orderFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
-          <label>Situação da produção<select v-model="orderFilters.status"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação da produção<select v-model="orderFilters.status" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetOrderFilters">Hoje</button>
         </form>
@@ -1497,13 +1600,13 @@ async function saveServiceType() {
                     "
                   />
                 </th>
-                <th>Pedido</th>
-                <th>Cliente / Produto</th>
-                <th>Data</th>
-                <th>Qtd.</th>
-                <th>Total</th>
-                <th>Pagamento</th>
-                <th>Status</th>
+                <th><button class="sort-button" @click="sortTable('orders', 'orderNumber')">Pedido<Icon :name="sortIcon(orderFilters, 'orderNumber')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'customerName')">Cliente / Produto<Icon :name="sortIcon(orderFilters, 'customerName')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'orderDate')">Data<Icon :name="sortIcon(orderFilters, 'orderDate')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'totalQuantity')">Qtd.<Icon :name="sortIcon(orderFilters, 'totalQuantity')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'totalValue')">Total<Icon :name="sortIcon(orderFilters, 'totalValue')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'paymentStatus')">Pagamento<Icon :name="sortIcon(orderFilters, 'paymentStatus')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('orders', 'status')">Status<Icon :name="sortIcon(orderFilters, 'status')" /></button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1584,21 +1687,28 @@ async function saveServiceType() {
           <div>
             <span class="eyebrow">Relacionamento</span>
             <h2>Clientes</h2>
-            <p>Gerencie os clientes disponíveis para os pedidos.</p>
+            <p>Gerencie os clientes atendidos na prestação de serviços.</p>
           </div>
           <button v-if="canWriteOrders" class="button" @click="editCustomer()">
             <Icon name="lucide:plus" />Novo cliente
           </button>
         </div>
+        <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('customers')">
+          <label>Buscar<input v-model.trim="tableFilters.customers.search" type="search" placeholder="Nome, apelido ou telefone" /></label>
+          <label>Situação<select v-model="tableFilters.customers.active" @change="loadFilteredTable('customers')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="resetTableFilters('customers')">Limpar</button>
+          <span class="table-count">{{ tablePages.customers?.total || 0 }} registro(s)</span>
+        </form>
         <div class="panel table-wrap" @scroll="tableScroll('customers', $event, () => loadNextTable('customers'))">
           <table>
             <thead>
               <tr>
-                <th>Nome</th>
-                <th>Apelido</th>
-                <th>Telefone</th>
+                <th><button class="sort-button" @click="sortTable('customers', 'name')">Nome<Icon :name="sortIcon(tableFilters.customers, 'name')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('customers', 'nickname')">Apelido<Icon :name="sortIcon(tableFilters.customers, 'nickname')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('customers', 'phone')">Telefone<Icon :name="sortIcon(tableFilters.customers, 'phone')" /></button></th>
                 <th>Preço base/mínimo</th>
-                <th>Situação</th>
+                <th><button class="sort-button" @click="sortTable('customers', 'active')">Situação<Icon :name="sortIcon(tableFilters.customers, 'active')" /></button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1645,7 +1755,7 @@ async function saveServiceType() {
           </div>
           <div class="head-actions">
           <label class="category-filter"
-            >Categoria<select v-model="productCategory">
+            >Categoria<select v-model="productCategory" @change="loadProducts">
               <option value="">Todas as categorias</option>
               <option
                 v-for="category in productCategories"
@@ -1655,20 +1765,34 @@ async function saveServiceType() {
                 {{ category }}
               </option>
             </select></label>
+          <label class="category-filter"
+            >Situação<select v-model="productStatus" @change="loadProducts">
+              <option value="all">Todos</option>
+              <option value="true">Ativos</option>
+              <option value="false">Inativos</option>
+            </select></label>
           <button class="button" @click="editProduct()"><Icon name="lucide:plus" />Novo produto</button>
           </div>
         </div>
-        <div v-if="filteredProducts.length" class="cards-grid">
+        <div v-if="products.length" class="cards-grid">
           <article
-            v-for="p in filteredProducts"
+            v-for="p in products"
             :key="p.id"
-            class="product-card"
+            :class="['product-card', { inactive: !p.active }]"
           >
             <div class="card-top">
-              <span class="category">{{ p.category }}</span>
-              <button class="edit-button" title="Editar produto" @click="editProduct(p)">
-                <Icon name="lucide:pencil" /><span>Editar</span>
-              </button>
+              <div class="product-labels">
+                <span class="category">{{ p.category }}</span>
+                <span :class="['status-badge', p.active ? 'ready' : 'cancelled']">{{ p.active ? "Ativo" : "Inativo" }}</span>
+              </div>
+              <div class="product-actions">
+                <button class="edit-button" title="Editar produto" @click="editProduct(p)">
+                  <Icon name="lucide:pencil" /><span>Editar</span>
+                </button>
+                <button class="product-toggle" :class="{ activate: !p.active }" :disabled="busy" @click="toggleProductActive(p)">
+                  {{ p.active ? "Inativar" : "Ativar" }}
+                </button>
+              </div>
             </div>
             <h3>{{ p.name }}</h3>
             <p>{{ p.color || "Sem cor" }} · {{ p.sku || "Sem SKU" }}</p>
@@ -1698,29 +1822,38 @@ async function saveServiceType() {
           </article>
         </div>
         <div v-else class="panel empty">
-          Nenhum produto encontrado nesta categoria.
+          Nenhum produto encontrado com esses filtros.
         </div>
       </section>
       <section v-else-if="tab === 'materials'" class="content">
         <div class="section-head">
           <div>
             <span class="eyebrow">Base de custos</span>
-            <h2>Insumos e fornecedores</h2>
-            <p>Preço da compra, rendimento e custo unitário.</p>
+            <h2>Insumos e custos de produção</h2>
+            <p>Matérias-primas, rendimento, mão de obra, serviços e embalagens.</p>
           </div>
           <button class="button" @click="editMaterial()">
             <Icon name="lucide:plus" />Novo insumo
           </button>
         </div>
+        <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('materials')">
+          <label>Buscar<input v-model.trim="tableFilters.materials.search" type="search" placeholder="Insumo, fornecedor ou unidade" /></label>
+          <label>Tipo<select v-model="tableFilters.materials.costType" @change="loadFilteredTable('materials')"><option value="">Todos</option><option v-for="(label, key) in costTypeLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.materials.active" @change="loadFilteredTable('materials')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="resetTableFilters('materials')">Limpar</button>
+          <span class="table-count">{{ tablePages.materials?.total || 0 }} registro(s)</span>
+        </form>
         <div class="panel table-wrap" @scroll="tableScroll('materials', $event, () => loadNextTable('materials'))">
           <table>
             <thead>
               <tr>
-                <th>Insumo</th>
-                <th>Fornecedor</th>
-                <th>Compra</th>
-                <th>Rendimento</th>
-                <th>Custo unitário</th>
+                <th><button class="sort-button" @click="sortTable('materials', 'name')">Insumo<Icon :name="sortIcon(tableFilters.materials, 'name')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('materials', 'costType')">Tipo<Icon :name="sortIcon(tableFilters.materials, 'costType')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('materials', 'supplier')">Fornecedor<Icon :name="sortIcon(tableFilters.materials, 'supplier')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('materials', 'purchasePrice')">Compra<Icon :name="sortIcon(tableFilters.materials, 'purchasePrice')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('materials', 'yieldQuantity')">Rendimento<Icon :name="sortIcon(tableFilters.materials, 'yieldQuantity')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('materials', 'unitCost')">Custo unitário<Icon :name="sortIcon(tableFilters.materials, 'unitCost')" /></button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1729,6 +1862,7 @@ async function saveServiceType() {
                 <td>
                   <strong>{{ m.name }}</strong>
                 </td>
+                <td>{{ costTypeLabels[m.costType] || m.costType }}</td>
                 <td>{{ m.supplier || "—" }}</td>
                 <td>{{ money(m.purchasePrice) }}</td>
                 <td>{{ m.yieldQuantity }} {{ m.unit }} por compra</td>
@@ -1781,10 +1915,17 @@ async function saveServiceType() {
             <Icon name="lucide:calculator" />Precificação
           </button>
         </div>
+        <form v-if="parameterTab === 'services'" class="panel data-table-filters" @submit.prevent="loadFilteredTable('serviceTypes')">
+          <label>Buscar<input v-model.trim="tableFilters.serviceTypes.search" type="search" placeholder="Nome do serviço" /></label>
+          <label>Situação<select v-model="tableFilters.serviceTypes.active" @change="loadFilteredTable('serviceTypes')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="resetTableFilters('serviceTypes')">Limpar</button>
+          <span class="table-count">{{ tablePages.serviceTypes?.total || 0 }} registro(s)</span>
+        </form>
         <div v-if="parameterTab === 'services'" class="panel table-wrap" @scroll="tableScroll('serviceTypes', $event, () => loadNextTable('serviceTypes'))">
           <div class="panel-head">
             <div>
-              <span class="eyebrow">Pedidos</span>
+              <span class="eyebrow">Serviços terceirizados</span>
               <h3>Tipos de serviço</h3>
             </div>
             <Icon name="lucide:wrench" class="panel-icon" />
@@ -1792,9 +1933,9 @@ async function saveServiceType() {
           <table v-if="serviceTypes.length" class="service-types-table">
             <thead>
               <tr>
-                <th>Tipo de serviço</th>
-                <th>Preço base/mínimo</th>
-                <th>Situação</th>
+                <th><button class="sort-button" @click="sortTable('serviceTypes', 'name')">Tipo de serviço<Icon :name="sortIcon(tableFilters.serviceTypes, 'name')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('serviceTypes', 'basePrice')">Preço base/mínimo<Icon :name="sortIcon(tableFilters.serviceTypes, 'basePrice')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('serviceTypes', 'active')">Situação<Icon :name="sortIcon(tableFilters.serviceTypes, 'active')" /></button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1863,8 +2004,15 @@ async function saveServiceType() {
             <button class="button" @click="editChannel()"><Icon name="lucide:plus" />Novo canal</button>
           </div>
           <p class="panel-description">Configure a comissão percentual e a tarifa fixa cobrada por unidade.</p>
+          <form class="data-table-filters inline-filters" @submit.prevent="loadFilteredTable('channels')">
+            <label>Buscar<input v-model.trim="tableFilters.channels.search" type="search" placeholder="Nome do canal" /></label>
+            <label>Situação<select v-model="tableFilters.channels.active" @change="loadFilteredTable('channels')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+            <button class="button"><Icon name="lucide:search" />Filtrar</button>
+            <button type="button" class="button ghost" @click="resetTableFilters('channels')">Limpar</button>
+            <span class="table-count">{{ tablePages.channels?.total || 0 }} registro(s)</span>
+          </form>
           <div class="table-wrap" @scroll="tableScroll('channels', $event, () => loadNextTable('channels'))"><table class="channels-table">
-            <thead><tr><th>Canal</th><th>Comissão</th><th>Tarifa por unidade</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th><button class="sort-button" @click="sortTable('channels', 'name')">Canal<Icon :name="sortIcon(tableFilters.channels, 'name')" /></button></th><th><button class="sort-button" @click="sortTable('channels', 'percentageFee')">Comissão<Icon :name="sortIcon(tableFilters.channels, 'percentageFee')" /></button></th><th><button class="sort-button" @click="sortTable('channels', 'fixedFee')">Tarifa por unidade<Icon :name="sortIcon(tableFilters.channels, 'fixedFee')" /></button></th><th><button class="sort-button" @click="sortTable('channels', 'active')">Status<Icon :name="sortIcon(tableFilters.channels, 'active')" /></button></th><th></th></tr></thead>
             <tbody><tr v-for="channel in channels" :key="channel.id">
               <td data-label="Canal"><strong>{{ channel.name }}</strong></td>
               <td data-label="Comissão">{{ (channel.percentageFee * 100).toFixed(2) }}%</td>
@@ -1887,14 +2035,22 @@ async function saveServiceType() {
             <Icon name="lucide:user-plus" />Novo usuário
           </button>
         </div>
+        <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('users')">
+          <label>Buscar<input v-model.trim="tableFilters.users.search" type="search" placeholder="Nome ou e-mail" /></label>
+          <label>Perfil<select v-model="tableFilters.users.role" @change="loadFilteredTable('users')"><option value="">Todos</option><option v-for="(label, key) in roleLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.users.active" @change="loadFilteredTable('users')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="resetTableFilters('users')">Limpar</button>
+          <span class="table-count">{{ tablePages.users?.total || 0 }} registro(s)</span>
+        </form>
         <div class="panel table-wrap" @scroll="tableScroll('users', $event, () => loadNextTable('users'))">
           <table>
             <thead>
               <tr>
-                <th>Usuário</th>
-                <th>Perfil</th>
-                <th>Status</th>
-                <th>Último acesso</th>
+                <th><button class="sort-button" @click="sortTable('users', 'name')">Usuário<Icon :name="sortIcon(tableFilters.users, 'name')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('users', 'role')">Perfil<Icon :name="sortIcon(tableFilters.users, 'role')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('users', 'active')">Status<Icon :name="sortIcon(tableFilters.users, 'active')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('users', 'lastLoginAt')">Último acesso<Icon :name="sortIcon(tableFilters.users, 'lastLoginAt')" /></button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1955,16 +2111,22 @@ async function saveServiceType() {
             <Icon name="lucide:refresh-cw" />Atualizar
           </button>
         </div>
+        <form class="panel data-table-filters" @submit.prevent="loadAudit()">
+          <label>Buscar<input v-model.trim="tableFilters.audit.search" type="search" placeholder="Usuário, ação ou entidade" /></label>
+          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <button type="button" class="button ghost" @click="tableFilters.audit.search = ''; loadAudit()">Limpar</button>
+          <span class="table-count">{{ auditData.total || 0 }} registro(s)</span>
+        </form>
         <div class="panel table-wrap" @scroll="tableScroll('audit', $event, () => loadNextTable('audit'))">
           <table>
             <thead>
               <tr>
-                <th>Data e hora</th>
-                <th>Usuário</th>
-                <th>Ação</th>
-                <th>Entidade</th>
+                <th><button class="sort-button" @click="sortTable('audit', 'createdAt')">Data e hora<Icon :name="sortIcon(tableFilters.audit, 'createdAt')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('audit', 'userName')">Usuário<Icon :name="sortIcon(tableFilters.audit, 'userName')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('audit', 'action')">Ação<Icon :name="sortIcon(tableFilters.audit, 'action')" /></button></th>
+                <th><button class="sort-button" @click="sortTable('audit', 'entity')">Entidade<Icon :name="sortIcon(tableFilters.audit, 'entity')" /></button></th>
                 <th>Detalhes</th>
-                <th>IP</th>
+                <th><button class="sort-button" @click="sortTable('audit', 'ipAddress')">IP<Icon :name="sortIcon(tableFilters.audit, 'ipAddress')" /></button></th>
               </tr>
             </thead>
             <tbody>
@@ -1998,25 +2160,9 @@ async function saveServiceType() {
         userModal ||
         materialModal ||
         profileModal ||
-        changeModal ||
-        confirmation
+        changeModal
       "
       class="modal-backdrop"
-      @click.self="
-        confirmation
-          ? settleConfirmation(false)
-          : !changeModal &&
-        !orderModal &&
-        (orderModal =
-          customerModal =
-          serviceTypeModal =
-          channelModal =
-          productModal =
-          userModal =
-          materialModal =
-          profileModal =
-            false)
-      "
     >
       <form v-if="orderModal" class="modal wide" @submit.prevent="saveOrder">
         <div class="modal-head">
@@ -2050,7 +2196,7 @@ async function saveServiceType() {
             >
               <option :value="null" disabled>Selecione</option>
               <option
-                v-for="serviceType in activeServiceTypes"
+                v-for="serviceType in orderServiceTypes"
                 :key="serviceType.id"
                 :value="serviceType.id"
               >
@@ -2186,7 +2332,7 @@ async function saveServiceType() {
           ><button
             class="button"
             :disabled="
-              busy || !activeCustomers.length || !activeServiceTypes.length || !gradeMatchesQuantity
+              busy || !activeCustomers.length || !orderServiceTypes.length || !gradeMatchesQuantity
             "
           >
             Salvar pedido
@@ -2389,16 +2535,17 @@ async function saveServiceType() {
         </div>
         <div class="two-cols">
           <label>Nome<input v-model="productForm.name" required maxlength="160" /></label>
-          <label>SKU<input v-model="productForm.sku" maxlength="80" /></label>
+          <label>SKU<input v-model="productForm.sku" required minlength="1" maxlength="80" /></label>
           <label>Categoria<input v-model="productForm.category" required maxlength="60" list="product-categories" /><datalist id="product-categories"><option v-for="category in productCategories" :key="category" :value="category" /></datalist></label>
           <label>Cor<input v-model="productForm.color" maxlength="120" /></label>
         </div>
         <label>Preço atual<input :value="money(productForm.currentPrice)" type="text" inputmode="numeric" @input="currencyInput($event, productForm, 'currentPrice')" /></label>
         <div class="components-head"><div><span class="eyebrow">Composição</span><h3>Insumos do produto</h3></div><button type="button" class="button secondary" @click="addProductComponent"><Icon name="lucide:plus" />Adicionar insumo</button></div>
+        <p class="components-help">A quantidade usada inicia em 2 para insumos em PAR e em 1 para as demais unidades.</p>
         <div class="components">
           <div v-for="(component, index) in productForm.components" :key="index" class="component-row">
-            <label>Insumo<select v-model.number="component.materialId" required><option :value="null" disabled>Selecione</option><option v-for="material in materials.filter((item) => item.active || item.id === component.materialId)" :key="material.id" :value="material.id">{{ material.name }} ({{ material.unit }})</option></select></label>
-            <label>Quantidade<input v-model.number="component.quantity" type="number" min="0.0001" step="0.0001" required /></label>
+            <label>Insumo ou custo<select v-model.number="component.materialId" required @change="selectProductMaterial(component, Number(($event.target as HTMLSelectElement).value))"><option :value="null" disabled>Selecione</option><option v-for="material in materials.filter((item) => item.active || item.id === component.materialId)" :key="material.id" :value="material.id">{{ material.name }} · {{ costTypeLabels[material.costType] || material.costType }} ({{ material.unit }})</option></select></label>
+            <label>Quantidade usada<input v-model.number="component.quantity" type="number" min="0.0001" step="0.0001" required /></label>
             <label>Perda (%)<input v-model.number="component.wastePercent" type="number" min="0" max="500" step="0.01" required /></label>
             <strong>{{ money((materials.find((item) => item.id === component.materialId)?.unitCost || 0) * component.quantity * (1 + component.wastePercent / 100)) }}</strong>
             <button type="button" class="tiny-button danger-text" title="Remover insumo" :disabled="productForm.components.length === 1" @click="productForm.components.splice(index, 1)"><Icon name="lucide:trash-2" /></button>
@@ -2425,8 +2572,11 @@ async function saveServiceType() {
             <Icon name="lucide:x" />
           </button>
         </div>
-        <label>Nome<input v-model="materialForm.name" required /></label
-        ><label>Fornecedor<input v-model="materialForm.supplier" /></label>
+        <label>Nome<input v-model="materialForm.name" required /></label>
+        <div class="two-cols">
+          <label>Tipo de custo<select v-model="materialForm.costType" required><option value="material">Matéria-prima</option><option value="labor">Mão de obra</option><option value="service">Serviço</option><option value="packaging">Embalagem</option></select></label>
+          <label>Fornecedor<input v-model="materialForm.supplier" /></label>
+        </div>
         <div class="three-cols">
           <label
             >Preço da compra<input
@@ -2444,7 +2594,7 @@ async function saveServiceType() {
               step=".0001"
               required /></label
           ><label
-            >Unidade<select v-model="materialForm.unit">
+            >Unidade<select v-model="materialForm.unit" @change="setMaterialUsageDefault">
               <option>UN</option>
               <option>PAR</option>
               <option>MT</option>
@@ -2460,12 +2610,34 @@ async function saveServiceType() {
             </select></label
           >
         </div>
+        <div class="yield-calculator">
+          <div class="components-head">
+            <div>
+              <span class="eyebrow">Calculadora de rendimento</span>
+              <h3>Custo por produto ou par</h3>
+            </div>
+          </div>
+          <label
+            >Quantidade usada<input
+              v-model.number="materialUsageQuantity"
+              type="number"
+              min="0"
+              step=".0001" />
+            <small>Informe quanto deste insumo é usado em um produto ou par.</small>
+          </label>
+          <div class="formula">
+            Quantidade usada × preço da compra ÷ rendimento
+          </div>
+        </div>
         <div class="product-total">
           <span>
-            Custo calculado por {{ materialForm.unit }}
-            <small>Preço da compra ÷ rendimento</small>
+            Custo para {{ materialUsageQuantity || 0 }} {{ materialForm.unit }}
+            <small>
+              Custo unitário: {{ money(materialUnitCostPreview) }} por
+              {{ materialForm.unit }}
+            </small>
           </span>
-          <strong>{{ money(materialUnitCostPreview) }}</strong>
+          <strong>{{ money(materialUsageCostPreview) }}</strong>
         </div>
         <div class="modal-actions">
           <button
@@ -2490,45 +2662,6 @@ async function saveServiceType() {
         <label class="check"><input v-model="channelForm.active" type="checkbox" />Canal ativo</label>
         <div class="modal-actions"><button type="button" class="button ghost" @click="channelModal = false">Cancelar</button><button class="button" :disabled="busy">Salvar canal</button></div>
       </form>
-      <section
-        v-else-if="confirmation"
-        class="modal confirmation-modal"
-        role="alertdialog"
-        aria-modal="true"
-        :aria-labelledby="'confirmation-title'"
-      >
-        <div class="modal-head">
-          <div>
-            <span class="eyebrow">Confirmação</span>
-            <h2 id="confirmation-title">{{ confirmation.title }}</h2>
-          </div>
-          <button
-            type="button"
-            class="tiny-button"
-            aria-label="Fechar confirmação"
-            @click="settleConfirmation(false)"
-          >
-            <Icon name="lucide:x" />
-          </button>
-        </div>
-        <p>{{ confirmation.message }}</p>
-        <div class="modal-actions">
-          <button
-            type="button"
-            class="button ghost"
-            @click="settleConfirmation(false)"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            class="button danger"
-            @click="settleConfirmation(true)"
-          >
-            {{ confirmation.confirmLabel }}
-          </button>
-        </div>
-      </section>
       <form v-else class="modal secure-modal" @submit.prevent="changePassword">
         <img src="/assets/logo-mavi.png" alt="Mavi" /><span
           class="eyebrow first-access-label"
@@ -2601,5 +2734,14 @@ async function saveServiceType() {
         <Icon name="lucide:info" />{{ notice }}
       </div></Transition
     >
+    <ConfirmModal
+      v-if="confirmation"
+      :title="confirmation.title"
+      :message="confirmation.message"
+      :confirm-label="confirmation.confirmLabel"
+      :danger="confirmation.danger"
+      @confirm="settleConfirmation(true)"
+      @cancel="settleConfirmation(false)"
+    />
   </div>
 </template>

@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const materialSchema = z.object({
   name: z.string().trim().min(2).max(160),
   supplier: z.string().trim().max(160).nullable().optional(),
+  costType: z.enum(['material', 'labor', 'service', 'packaging']).default('material'),
   unit: z.string().trim().min(1).max(20),
   purchasePrice: z.coerce.number().nonnegative(),
   yieldQuantity: z.coerce.number().positive(),
@@ -24,12 +25,14 @@ export const componentSchema = z.object({
 
 export const productSchema = z.object({
   name: z.string().trim().min(2).max(160),
-  sku: z.string().trim().max(80).nullable().optional(),
+  sku: z.string().trim().min(1).max(80),
   category: z.string().trim().min(2).max(60),
   color: z.string().trim().max(120).nullable().optional(),
   currentPrice: z.coerce.number().nonnegative(),
   components: z.array(componentSchema).min(1)
 })
+
+export const productActiveSchema = z.object({ active: z.boolean() })
 
 export async function validatedBody<T>(event: Parameters<typeof readBody>[0], schema: z.ZodType<T>) {
   const parsed = schema.safeParse(await readBody(event))

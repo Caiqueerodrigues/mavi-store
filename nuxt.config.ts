@@ -1,5 +1,9 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
+  devServer: {
+    host: '0.0.0.0',
+    port: Number(process.env.APP_PORT || 3002)
+  },
   devtools: { enabled: false },
   modules: ['@nuxt/icon'],
   icon: {

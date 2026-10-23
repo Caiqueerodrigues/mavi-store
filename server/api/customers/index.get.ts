@@ -1,9 +1,12 @@
 export default defineEventHandler(async (event) => {
   requirePermission(event, 'orders:read')
-  const query = getQuery(event), activeOnly = query.active === 'true', page = getPagination(event)
-  const rows = activeOnly
-    ? await db()`SELECT id,name,phone,nickname,active,COUNT(*) OVER()::int AS _total FROM customers WHERE active=TRUE ORDER BY name LIMIT ${page?.limit ?? null} OFFSET ${page?.offset ?? 0}`
-    : await db()`SELECT id,name,phone,nickname,active,COUNT(*) OVER()::int AS _total FROM customers ORDER BY active DESC,name LIMIT ${page?.limit ?? null} OFFSET ${page?.offset ?? 0}`
+  const query = getQuery(event), search = String(query.search || '').trim().slice(0, 120), active = String(query.active || ''), page = getPagination(event)
+  const sortColumn = ({ name: 'name', nickname: 'nickname', phone: 'phone', active: 'active' } as Record<string, string>)[String(query.sort)] || 'name'
+  const direction = query.direction === 'desc' ? 'DESC' : 'ASC', sql = db()
+  const rows = await sql`SELECT id,name,phone,nickname,active,COUNT(*) OVER()::int AS _total FROM customers
+    WHERE (${search}='' OR name ILIKE ${'%' + search + '%'} OR nickname ILIKE ${'%' + search + '%'} OR phone ILIKE ${'%' + search + '%'})
+      AND (${active}='' OR active=${active === 'true'})
+    ORDER BY ${sql(sortColumn)} ${sql.unsafe(direction)}, id ASC LIMIT ${page?.limit ?? null} OFFSET ${page?.offset ?? 0}`
   const items = rows.map(({ _total, ...row }) => row)
   return page ? { items, total: rows[0]?._total || 0, ...page } : items
 })

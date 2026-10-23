@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
       name: input.name,
       basePrice: input.basePrice,
     });
+    setResponseStatus(event, 201);
     return { ...row, basePrice: Number(row!.basePrice) };
   } catch (error: any) {
     if (error?.code === "23505")

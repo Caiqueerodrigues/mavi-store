@@ -5,6 +5,7 @@ const route = useRoute();
 const paths = [
   "/login",
   "/visao-geral",
+  "/servicos",
   "/pedidos",
   "/clientes",
   "/produtos",

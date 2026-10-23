@@ -108,7 +108,7 @@ async function migrateAndSeed() {
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
         name VARCHAR(160) NOT NULL,
-        sku VARCHAR(80) UNIQUE,
+        sku VARCHAR(80) NOT NULL UNIQUE,
         category VARCHAR(60) NOT NULL DEFAULT 'Sandália',
         color VARCHAR(120),
         current_price NUMERIC(12,4) NOT NULL DEFAULT 0 CHECK (current_price >= 0),
@@ -154,7 +154,7 @@ async function migrateAndSeed() {
         id SERIAL PRIMARY KEY,
         order_number VARCHAR(40) NOT NULL UNIQUE,
         customer_name VARCHAR(160) NOT NULL,
-        order_type VARCHAR(40) NOT NULL DEFAULT 'CORTE',
+        order_type VARCHAR(40) NOT NULL,
         product_description VARCHAR(300) NOT NULL,
         material VARCHAR(180),
         color VARCHAR(120),

@@ -26,4 +26,3 @@ DO $$ BEGIN ALTER TABLE "orders" ADD CONSTRAINT "orders_customer_id_customers_id
 --> statement-breakpoint
 DO $$ BEGIN ALTER TABLE "orders" ADD CONSTRAINT "orders_service_type_id_service_types_id_fk" FOREIGN KEY ("service_type_id") REFERENCES "service_types"("id"); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
-INSERT INTO "service_types" ("name") VALUES ('CORTE') ON CONFLICT ("name") DO NOTHING;

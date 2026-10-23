@@ -20,8 +20,13 @@ export default defineEventHandler(async (event) => {
     COALESCE(SUM(paid_amount), 0)::float8 AS paid
     FROM orders WHERE deleted_at IS NULL AND order_date >= ${period!.dateFrom} AND order_date < (${period!.dateTo}::date + INTERVAL '1 day')
     GROUP BY order_type ORDER BY total DESC`
+  const byCustomer = await db()`SELECT customer_id AS id, customer_name AS name, COUNT(*)::int AS orders,
+    COALESCE(SUM(quantity * unit_price), 0)::float8 AS total,
+    COALESCE(SUM(paid_amount), 0)::float8 AS paid
+    FROM orders WHERE deleted_at IS NULL AND order_date >= ${period!.dateFrom} AND order_date < (${period!.dateTo}::date + INTERVAL '1 day')
+    GROUP BY customer_id, customer_name ORDER BY total DESC, customer_name ASC LIMIT 10`
   const statuses = await db()`SELECT status AS name, COUNT(*)::int AS total
     FROM orders WHERE deleted_at IS NULL AND order_date >= ${period!.dateFrom} AND order_date < (${period!.dateTo}::date + INTERVAL '1 day')
     GROUP BY status ORDER BY total DESC`
-  return { period: { from: period!.dateFrom, to: period!.dateTo }, summary, byService, statuses }
+  return { period: { from: period!.dateFrom, to: period!.dateTo }, summary, byService, byCustomer, statuses }
 })

@@ -50,6 +50,20 @@
       "when": 1792378800000,
       "tag": "0006_spreadsheet_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792703600000,
+      "tag": "0008_complete_spreadsheet_cost_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792746800000,
+      "tag": "0014_complete_existing_product_costs",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ export type Material = {
   id: number
   name: string
   supplier: string | null
+  costType: 'material' | 'labor' | 'service' | 'packaging'
   unit: string
   purchasePrice: number
   yieldQuantity: number
@@ -23,10 +24,11 @@ export type Component = {
 export type Product = {
   id: number
   name: string
-  sku: string | null
+  sku: string
   category: string
   color: string | null
   currentPrice: number
+  active: boolean
   components: Component[]
   productionCost: number
   minimumPrice: number

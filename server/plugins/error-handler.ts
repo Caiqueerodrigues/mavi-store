@@ -2,6 +2,7 @@ export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('error', async (error: any, context: any) => {
     const event = context?.event
     if (!event || !event.path?.startsWith('/api/')) return
+    const requestLog = (event.context as any).requestLog
     const databaseMessages: Record<string, string> = {
       '23505': 'Já existe um registro com esses dados.',
       '23503': 'O registro está relacionado a outros dados e não pode ser alterado dessa forma.',
@@ -14,8 +15,23 @@ export default defineNitroPlugin((nitroApp) => {
     } else if (!error.statusCode || error.statusCode >= 500) {
       error.statusCode = 500
       error.statusMessage = 'Não foi possível concluir a solicitação. Tente novamente ou procure um administrador.'
-      console.error('Erro interno em requisição', { method: event.method, path: event.path, code: error.code, error })
     }
+    const statusCode = Number(error.statusCode || 500)
+    const user = (event.context as any).user
+    process.stderr.write(`${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      event: 'http_error',
+      requestId: requestLog?.requestId || null,
+      method: event.method,
+      path: getRequestURL(event).pathname,
+      status: statusCode,
+      code: error.code || null,
+      message: String(error.message || error.statusMessage || 'Erro desconhecido').slice(0, 2000),
+      userId: user?.id || null,
+      role: user?.role || null,
+      stack: statusCode >= 500 ? String(error.stack || '').slice(0, 16_000) : undefined,
+    })}\n`)
     try {
       await audit(event, 'REQUEST_ERROR', 'request', undefined, {
         method: event.method,

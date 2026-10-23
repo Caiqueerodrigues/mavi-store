@@ -9,7 +9,7 @@
     ]
   },
   "scripts": {
-    "dev": "nuxt dev --host 0.0.0.0",
+    "dev": "nuxt dev",
     "build": "nuxt build",
     "preview": "nuxt preview --host 0.0.0.0",
     "typecheck": "nuxt typecheck",

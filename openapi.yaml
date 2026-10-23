@@ -16,12 +16,20 @@ paths:
         '200': { description: Aplicação disponível }
   /dashboard:
     get:
-      summary: Retorna indicadores e produtos com menor rentabilidade
+      summary: Retorna indicadores de serviços por período, tipo, cliente e situação
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
       responses:
-        '200': { description: Resumo calculado, content: { application/json: { schema: { type: object } } } }
+        '200': { description: Resumo calculado, content: { application/json: { schema: { $ref: '#/components/schemas/Dashboard' } } } }
+        '422': { description: Período inválido }
   /materials:
     get:
       summary: Lista insumos
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: Busca por insumo, fornecedor ou unidade }
+        - { name: costType, in: query, schema: { type: string, enum: [material, labor, service, packaging] } }
+        - { name: active, in: query, schema: { type: boolean } }
       responses:
         '200': { description: Lista de insumos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Material' } } } } }
     post:
@@ -47,14 +55,28 @@ paths:
   /products:
     get:
       summary: Lista produtos com custos e margens calculados
+      parameters:
+        - in: query
+          name: active
+          schema: { type: string, enum: ['true', 'false', 'all'], default: 'true' }
+          description: Filtra por situação ou retorna todas as situações
+        - in: query
+          name: category
+          schema: { type: string, maxLength: 60 }
+          description: Filtra os produtos por categoria
       responses:
-        '200': { description: Produtos ativos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Product' } } } } }
+        '200': { description: Produtos conforme o filtro de situação, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Product' } } } } }
     post:
       summary: Cria produto e ficha técnica atomicamente
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductInput' } } } }
       responses:
         '201': { description: Produto calculado, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
         '422': { $ref: '#/components/responses/ValidationError' }
+  /products/categories:
+    get:
+      summary: Lista categorias de produtos disponíveis para filtro
+      responses:
+        '200': { description: Categorias de produtos, content: { application/json: { schema: { type: array, items: { type: string } } } } }
   /products/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
     put:
@@ -63,6 +85,21 @@ paths:
       responses:
         '200': { description: Produto recalculado, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
         '404': { description: Produto não encontrado }
+    patch:
+      summary: Ativa ou inativa um produto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: { type: boolean }
+      responses:
+        '204': { description: Situação do produto atualizada }
+        '404': { description: Produto não encontrado }
+        '422': { $ref: '#/components/responses/ValidationError' }
     delete:
       summary: Arquiva um produto
       responses:
@@ -70,6 +107,9 @@ paths:
   /channels:
     get:
       summary: Lista canais e taxas
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
       responses:
         '200': { description: Canais cadastrados }
     post:
@@ -134,6 +174,10 @@ paths:
   /users:
     get:
       summary: Lista usuários; requer perfil Administrador
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: Busca por nome ou e-mail }
+        - { name: role, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
       responses: { '200': { description: Usuários ativos e inativos } }
     post:
       summary: Cria usuário sem autocadastro; requer Administrador
@@ -149,9 +193,34 @@ paths:
       summary: Exclui usuário logicamente e revoga sessões; requer Administrador
       parameters: [{ $ref: '#/components/parameters/Csrf' }]
       responses: { '204': { description: Usuário removido } }
+  /service-types:
+    get:
+      summary: Lista tipos de serviço terceirizado
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: Busca pelo nome do serviço }
+        - { name: active, in: query, schema: { type: boolean }, description: Quando verdadeiro, retorna somente tipos ativos }
+      responses: { '200': { description: Tipos de serviço encontrados } }
+    post:
+      summary: Cadastra um tipo de serviço terceirizado
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceTypeInput' } } } }
+      responses: { '201': { description: Tipo de serviço criado }, '409': { description: Nome já cadastrado }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /service-types/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Atualiza um tipo de serviço terceirizado
+      parameters: [{ $ref: '#/components/parameters/Csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceTypeInput' } } } }
+      responses: { '200': { description: Tipo de serviço atualizado }, '404': { description: Tipo não encontrado }, '409': { description: Nome já cadastrado }, '422': { $ref: '#/components/responses/ValidationError' } }
   /orders:
     get:
       summary: Lista pedidos não excluídos
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: Busca por cliente, serviço ou observação }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: paymentStatus, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
       responses: { '200': { description: Pedidos encontrados } }
     post:
       summary: Cadastra um pedido e sua grade
@@ -186,6 +255,8 @@ paths:
   /audit:
     get:
       summary: Lista paginada dos registros imutáveis de auditoria
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: Busca por usuário, ação ou entidade }
       responses: { '200': { description: Eventos mais recentes } }
 components:
   headers:
@@ -201,12 +272,46 @@ components:
   responses:
     ValidationError: { description: Corpo inválido; os campos são retornados em `data.fieldErrors` }
   schemas:
+    ServiceTypeInput:
+      type: object
+      required: [name, basePrice, active]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100, example: Pesponto }
+        basePrice: { type: number, minimum: 0, example: 2.5 }
+        active: { type: boolean, default: true }
+    Dashboard:
+      type: object
+      required: [period, summary, byService, byCustomer, statuses]
+      properties:
+        period:
+          type: object
+          required: [from, to]
+          properties: { from: { type: string, format: date }, to: { type: string, format: date } }
+        summary: { type: object, additionalProperties: true }
+        byService: { type: array, items: { $ref: '#/components/schemas/DashboardBreakdown' } }
+        byCustomer: { type: array, items: { $ref: '#/components/schemas/DashboardBreakdown' } }
+        statuses:
+          type: array
+          items:
+            type: object
+            required: [name, total]
+            properties: { name: { type: string }, total: { type: integer } }
+    DashboardBreakdown:
+      type: object
+      required: [name, orders, total, paid]
+      properties:
+        id: { type: [integer, 'null'] }
+        name: { type: string }
+        orders: { type: integer }
+        total: { type: number }
+        paid: { type: number }
     MaterialInput:
       type: object
-      required: [name, unit, purchasePrice, yieldQuantity]
+      required: [name, costType, unit, purchasePrice, yieldQuantity]
       properties:
         name: { type: string, minLength: 2, example: Manta strass }
         supplier: { type: [string, 'null'], example: Compofram }
+        costType: { type: string, enum: [material, labor, service, packaging], default: material }
         unit: { type: string, example: MT }
         purchasePrice: { type: number, minimum: 0, example: 16 }
         yieldQuantity: { type: number, exclusiveMinimum: 0, example: 65, description: Quantidade de unidades, pares ou metros produzidos por uma compra }
@@ -228,10 +333,10 @@ components:
         wastePercent: { type: number, minimum: 0, default: 0, description: Fração decimal; 0.05 representa 5% }
     ProductInput:
       type: object
-      required: [name, category, currentPrice, components]
+      required: [name, sku, category, currentPrice, components]
       properties:
         name: { type: string, minLength: 2 }
-        sku: { type: [string, 'null'] }
+        sku: { type: string, minLength: 1, maxLength: 80 }
         category: { type: string, example: Sandália }
         color: { type: [string, 'null'] }
         currentPrice: { type: number, minimum: 0 }
@@ -240,9 +345,10 @@ components:
       allOf:
         - { $ref: '#/components/schemas/ProductInput' }
         - type: object
-          required: [id, productionCost, minimumPrice, expectedProfit, currentProfit]
+          required: [id, active, productionCost, minimumPrice, expectedProfit, currentProfit]
           properties:
             id: { type: integer }
+            active: { type: boolean }
             productionCost: { type: number }
             minimumPrice: { type: number }
             expectedProfit: { type: number }

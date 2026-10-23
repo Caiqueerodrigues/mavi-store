@@ -3,7 +3,7 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   const input = await validatedBody(event, materialSchema)
   const rows = await db()`
-    UPDATE materials SET name=${input.name}, supplier=${input.supplier || null}, unit=${input.unit.toUpperCase()},
+    UPDATE materials SET name=${input.name}, supplier=${input.supplier || null}, cost_type=${input.costType}, unit=${input.unit.toUpperCase()},
       purchase_price=${input.purchasePrice}, purchase_quantity=${input.yieldQuantity}, active=${input.active}, updated_at=NOW()
     WHERE id=${id} RETURNING id
   `

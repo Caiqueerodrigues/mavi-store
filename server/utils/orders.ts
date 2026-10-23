@@ -5,7 +5,7 @@ const orderBaseSchema = z.object({
   customerId: z.coerce.number().int().positive(),
   customerName: z.string().trim().min(2).max(160),
   serviceTypeId: z.coerce.number().int().positive(),
-  orderType: z.string().trim().min(2).max(40).default('CORTE'),
+  orderType: z.string().trim().max(40).optional().default(''),
   productDescription: z.string().trim().min(2).max(300),
   material: z.string().trim().max(180).nullable().optional(),
   color: z.string().trim().max(120).nullable().optional(),
