@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
     await audit(event, 'USER_CREATED', 'user', row!.id, { name: input.name, email: input.email, role: input.role })
     setResponseStatus(event, 201); return { id: row!.id }
   } catch (error: any) {
-    if (error?.code === '23505') throw createError({ statusCode: 409, statusMessage: 'E-mail já cadastrado' })
+    if (error?.code === '23505') throw createApiError({ statusCode: 409, message: 'E-mail já cadastrado' })
     throw error
   }
 })

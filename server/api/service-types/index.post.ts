@@ -18,9 +18,9 @@ export default defineEventHandler(async (event) => {
     return { ...row, basePrice: Number(row!.basePrice) };
   } catch (error: any) {
     if (error?.code === "23505")
-      throw createError({
+      throw createApiError({
         statusCode: 409,
-        statusMessage: "Tipo de serviço já cadastrado",
+        message: "Tipo de serviço já cadastrado",
       });
     throw error;
   }

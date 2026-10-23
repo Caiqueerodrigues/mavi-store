@@ -6,6 +6,7 @@ export default defineNuxtConfig({
   },
   devtools: { enabled: false },
   modules: ['@nuxt/icon'],
+  imports: { dirs: ['shared/utils'] },
   icon: {
     fallbackToApi: false,
     serverBundle: {

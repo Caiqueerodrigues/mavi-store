@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
     await audit(event, 'CHANNEL_CREATED', 'channel', row!.id, { name: input.name, fixedFee: input.fixedFee, percentageFee: input.percentageFee })
     return { id: row!.id, name: row!.name, fixedFee: row!.fixedFee, percentageFee: row!.percentageFee, active: row!.active }
   } catch (error: any) {
-    if (error?.code === '23505') throw createError({ statusCode: 409, statusMessage: 'Canal já cadastrado' })
+    if (error?.code === '23505') throw createApiError({ statusCode: 409, message: 'Canal já cadastrado' })
     throw error
   }
 })

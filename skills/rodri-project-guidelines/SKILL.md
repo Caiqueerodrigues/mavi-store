@@ -33,3 +33,10 @@ Use this skill for changes to this application's interface, APIs, filters, produ
 - Do not add a product component when the corresponding spreadsheet quantity is zero or blank. Do not carry a component from one model into another merely because the models share a material category.
 - If a spreadsheet formula references another model's result, verify the reference against its row/model before copying it into the application; preserve the model's own cost logic rather than reproducing a confirmed spreadsheet reference error.
 - Prefer updating the existing consolidated migration when it can safely and idempotently correct these seeded records. Avoid adding a new migration solely for a correction to that same seed set.
+
+## Erros HTTP
+
+- Use `createApiError` de `shared/utils/api-error.ts` para criar erros HTTP em rotas, middlewares, validações e utilitários do servidor. O Nuxt o autoimporta.
+- Passe em cada chamada o `statusCode` correspondente ao erro real; não aplique um status genérico fixo a todos os erros.
+- Use `message` para a mensagem detalhada. Não use `statusMessage` para mensagens da aplicação, pois o H3 pode sanitizá-lo e emitir avisos.
+- Preserve `data` ou outras informações adicionais quando forem necessárias e prefira `data.message` no cliente.

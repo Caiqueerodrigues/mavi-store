@@ -583,7 +583,7 @@ onMounted(async () => {
       await loadRouteData();
     } catch (error: any) {
       toast(
-        error?.data?.statusMessage ||
+        error?.data?.message || error?.data?.statusMessage ||
           "Não foi possível carregar todos os dados. Tente novamente.",
       );
     }
@@ -607,7 +607,7 @@ async function login() {
     if (!data.user.mustChangePassword) await loadRouteData();
   } catch (e: any) {
     if (!user.value)
-      loginError.value = e?.data?.statusMessage || "Não foi possível entrar";
+      loginError.value = e?.data?.message || e?.data?.statusMessage || "Não foi possível entrar";
   } finally {
     busy.value = false;
   }
@@ -646,7 +646,7 @@ async function changePassword() {
     await loadRouteData();
     toast("Senha alterada com sucesso.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Revise os requisitos da senha");
+    toast(e?.data?.message || e?.data?.statusMessage || "Revise os requisitos da senha");
   } finally {
     busy.value = false;
   }
@@ -698,7 +698,7 @@ watch(
         await loadRouteData(path);
       } catch (error: any) {
         toast(
-          error?.data?.statusMessage ||
+          error?.data?.message || error?.data?.statusMessage ||
             "Não foi possível carregar os dados desta página.",
         );
       }
@@ -754,7 +754,7 @@ async function editOrder(item?: Order) {
       "/api/service-types?active=true",
     );
   } catch (error: any) {
-    toast(error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.");
+    toast(error?.data?.message || error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.");
     return;
   }
   const firstCustomer = activeCustomers.value[0];
@@ -814,7 +814,7 @@ async function saveOrder() {
     await loadAudit();
     toast("Pedido salvo e auditado.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível salvar o pedido");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o pedido");
   } finally {
     busy.value = false;
   }
@@ -837,7 +837,7 @@ async function applyBulkAction() {
     await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedidos atualizados em lote.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível atualizar os pedidos");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar os pedidos");
   } finally {
     busy.value = false;
   }
@@ -852,7 +852,7 @@ async function cloneOrder(item: Order) {
     await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedido clonado.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível clonar o pedido.");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível clonar o pedido.");
   } finally {
     busy.value = false;
   }
@@ -958,7 +958,7 @@ async function saveProfile() {
     profileModal.value = false;
     toast("Perfil atualizado.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível atualizar o perfil");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar o perfil");
   } finally {
     busy.value = false;
   }
@@ -975,7 +975,7 @@ async function saveUser() {
     await loadAudit();
     toast("Usuário salvo.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível salvar o usuário");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o usuário");
   } finally {
     busy.value = false;
   }
@@ -1144,7 +1144,7 @@ async function saveProduct() {
     dashboard.value = await api("/api/dashboard");
     toast("Produto salvo.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível salvar o produto");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o produto");
   } finally {
     busy.value = false;
   }
@@ -1168,7 +1168,7 @@ async function toggleProductActive(item: Product) {
     dashboard.value = await api("/api/dashboard");
     toast(active ? "Produto ativado." : "Produto inativado.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível alterar a situação do produto");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível alterar a situação do produto");
   } finally {
     busy.value = false;
   }
@@ -1212,7 +1212,7 @@ async function saveChannel() {
     dashboard.value = await api("/api/dashboard");
     toast("Canal de venda salvo.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível salvar o canal");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o canal");
   } finally {
     busy.value = false;
   }
@@ -1245,7 +1245,7 @@ async function saveCustomer() {
     await loadFilteredTable("customers");
     toast("Cliente salvo.");
   } catch (e: any) {
-    toast(e?.data?.statusMessage || "Não foi possível salvar o cliente");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o cliente");
   } finally {
     busy.value = false;
   }
@@ -1278,7 +1278,7 @@ async function saveServiceType() {
     toast("Tipo de serviço salvo.");
   } catch (e: any) {
     toast(
-      e?.data?.statusMessage || "Não foi possível salvar o tipo de serviço",
+      e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o tipo de serviço",
     );
   } finally {
     busy.value = false;

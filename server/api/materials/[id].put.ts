@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
       purchase_price=${input.purchasePrice}, purchase_quantity=${input.yieldQuantity}, active=${input.active}, updated_at=NOW()
     WHERE id=${id} RETURNING id
   `
-  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'Insumo não encontrado' })
+  if (!rows.length) throw createApiError({ statusCode: 404, message: 'Insumo não encontrado' })
   await audit(event, 'MATERIAL_UPDATED', 'material', id, { name: input.name })
   return { id }
 })

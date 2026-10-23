@@ -37,7 +37,7 @@ export const productActiveSchema = z.object({ active: z.boolean() })
 export async function validatedBody<T>(event: Parameters<typeof readBody>[0], schema: z.ZodType<T>) {
   const parsed = schema.safeParse(await readBody(event))
   if (!parsed.success) {
-    throw createError({ statusCode: 422, statusMessage: 'Dados inválidos', data: parsed.error.flatten() })
+    throw createApiError({ statusCode: 422, message: 'Dados inválidos', data: parsed.error.flatten() })
   }
   return parsed.data
 }

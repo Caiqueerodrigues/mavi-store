@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   const [period] = await db()`SELECT
     COALESCE(NULLIF(${from}::text, '')::date, date_trunc('month', CURRENT_DATE)::date) AS date_from,
     LEAST(COALESCE(NULLIF(${to}::text, '')::date, CURRENT_DATE), CURRENT_DATE) AS date_to`
-  if (period!.dateFrom > period!.dateTo) throw createError({ statusCode: 422, statusMessage: 'A data inicial não pode ser maior que a data final' })
+  if (period!.dateFrom > period!.dateTo) throw createApiError({ statusCode: 422, message: 'A data inicial não pode ser maior que a data final' })
   const [summary] = await db()`SELECT COUNT(*)::int AS orders,
     COALESCE(SUM(quantity * unit_price), 0)::float8 AS total_value,
     COALESCE(SUM(paid_amount), 0)::float8 AS paid_value,

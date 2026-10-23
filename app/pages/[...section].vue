@@ -17,7 +17,7 @@ const paths = [
 ];
 
 if (!paths.includes(route.path)) {
-  throw createError({ statusCode: 404, statusMessage: "Página não encontrada" });
+  throw createApiError({ statusCode: 404, message: "Página não encontrada" });
 }
 </script>
 

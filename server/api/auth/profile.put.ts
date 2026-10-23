@@ -13,11 +13,11 @@ export default defineEventHandler(async (event) => {
       SET name=${input.name}, email=${input.email.toLowerCase()}, updated_at=NOW()
       WHERE id=${current.id} AND active=TRUE AND deleted_at IS NULL
       RETURNING id, name, email, role, must_change_password`
-    if (!row) throw createError({ statusCode: 404, statusMessage: 'Usuário não encontrado' })
+    if (!row) throw createApiError({ statusCode: 404, message: 'Usuário não encontrado' })
     await audit(event, 'USER_PROFILE_UPDATED', 'user', current.id, { name: input.name, email: input.email })
     return { user: { id: row.id, name: row.name, email: row.email, role: row.role, mustChangePassword: row.mustChangePassword } }
   } catch (error: any) {
-    if (error?.code === '23505') throw createError({ statusCode: 409, statusMessage: 'E-mail já cadastrado' })
+    if (error?.code === '23505') throw createApiError({ statusCode: 409, message: 'E-mail já cadastrado' })
     throw error
   }
 })

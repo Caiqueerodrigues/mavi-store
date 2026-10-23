@@ -16,10 +16,10 @@ function consumeAttempt(key: string, now: number) {
   if (attempts.size > 10_000)
     for (const [entry, value] of attempts) if (value.resetAt <= now) attempts.delete(entry);
   if (attempts.size >= 10_000 && !attempts.has(key))
-    throw createError({ statusCode: 429, statusMessage: "Muitas tentativas. Aguarde 15 minutos." });
+    throw createApiError({ statusCode: 429, message: "Muitas tentativas. Aguarde 15 minutos." });
   const current = attempts.get(key);
   if (current && current.resetAt > now && current.count >= 5)
-    throw createError({ statusCode: 429, statusMessage: "Muitas tentativas. Aguarde 15 minutos." });
+    throw createApiError({ statusCode: 429, message: "Muitas tentativas. Aguarde 15 minutos." });
   if (!current || current.resetAt <= now) attempts.set(key, { count: 0, resetAt: now + windowMs });
 }
 
@@ -41,18 +41,18 @@ export default defineEventHandler(async (event) => {
     await audit(event, "AUTH_LOGIN_FAILED", "auth", input.email, {
       reason: "invalid_credentials",
     });
-    throw createError({
+    throw createApiError({
       statusCode: 401,
-      statusMessage: "E-mail ou senha inválidos",
+      message: "E-mail ou senha inválidos",
     });
   }
   if (!row.active) {
     await audit(event, "AUTH_LOGIN_BLOCKED", "auth", row.id, {
       reason: "inactive_user",
     });
-    throw createError({
+    throw createApiError({
       statusCode: 403,
-      statusMessage: "Usuário inativo. Procure um administrador para liberar seu acesso.",
+      message: "Usuário inativo. Procure um administrador para liberar seu acesso.",
     });
   }
   attempts.delete(ip);

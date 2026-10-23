@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const user = requirePermission(event, 'dashboard:read')
   const input = await validatedBody(event, schema)
   const [row] = await db()`SELECT password_hash FROM users WHERE id=${user.id}`
-  if (!row || !await compare(input.currentPassword, row.passwordHash)) throw createError({ statusCode: 422, statusMessage: 'Senha atual incorreta' })
+  if (!row || !await compare(input.currentPassword, row.passwordHash)) throw createApiError({ statusCode: 422, message: 'Senha atual incorreta' })
   await db()`UPDATE users SET password_hash=${await hash(input.newPassword, 12)}, must_change_password=FALSE, updated_at=NOW() WHERE id=${user.id}`
   await db()`UPDATE refresh_sessions SET revoked_at=NOW() WHERE user_id=${user.id} AND revoked_at IS NULL`
   const updatedUser = { ...user, mustChangePassword: false }

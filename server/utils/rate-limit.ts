@@ -10,7 +10,7 @@ export function assertRateLimit(event: H3Event, scope: string, identity: string,
   }
   const key = `${scope}:${identity}`
   if (buckets.size >= maxBuckets && !buckets.has(key))
-    throw createError({ statusCode: 429, statusMessage: 'Muitas solicitações. Tente novamente mais tarde.' })
+    throw createApiError({ statusCode: 429, message: 'Muitas solicitações. Tente novamente mais tarde.' })
 
   let bucket = buckets.get(key)
   if (!bucket || bucket.resetAt <= now) {
@@ -23,7 +23,7 @@ export function assertRateLimit(event: H3Event, scope: string, identity: string,
   setResponseHeader(event, 'x-ratelimit-reset', String(Math.ceil(bucket.resetAt / 1000)))
   if (bucket.count >= limit) {
     setResponseHeader(event, 'retry-after', Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)))
-    throw createError({ statusCode: 429, statusMessage: 'Muitas solicitações. Tente novamente mais tarde.' })
+    throw createApiError({ statusCode: 429, message: 'Muitas solicitações. Tente novamente mais tarde.' })
   }
   bucket.count++
 }

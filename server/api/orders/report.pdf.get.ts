@@ -80,9 +80,9 @@ export default defineEventHandler(async (event) => {
       parsedIds.length > 500 ||
       parsedIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
     ) {
-      throw createError({
+      throw createApiError({
         statusCode: 400,
-        statusMessage: "Informe até 500 IDs de pedidos válidos",
+        message: "Informe até 500 IDs de pedidos válidos",
       });
     }
     ids = [...new Set(parsedIds)];
@@ -93,9 +93,9 @@ export default defineEventHandler(async (event) => {
       FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
       WHERE o.deleted_at IS NULL ${filter} ORDER BY o.customer_name, o.order_date, o.id`;
   if (!orders.length)
-    throw createError({
+    throw createApiError({
       statusCode: 404,
-      statusMessage: "Nenhum pedido para gerar o relatório",
+      message: "Nenhum pedido para gerar o relatório",
     });
 
   const pdf = await PDFDocument.create(),

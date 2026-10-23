@@ -166,7 +166,7 @@ export async function verifyAccess(event: H3Event): Promise<AuthUser | null> {
 export async function rotateRefresh(event: H3Event) {
   const token = getCookie(event, refreshCookie);
   if (!token)
-    throw createError({ statusCode: 401, statusMessage: "Sessão expirada" });
+    throw createApiError({ statusCode: 401, message: "Sessão expirada" });
   try {
     const { payload } = await jwtVerify(
       token,
@@ -197,7 +197,7 @@ export async function rotateRefresh(event: H3Event) {
     });
   } catch {
     clearAuthCookies(event);
-    throw createError({ statusCode: 401, statusMessage: "Sessão expirada" });
+    throw createApiError({ statusCode: 401, message: "Sessão expirada" });
   }
 }
 
@@ -215,11 +215,11 @@ export function clearAuthCookies(event: H3Event) {
 export function requirePermission(event: H3Event, permission: Permission) {
   const user = (event.context as any).user as AuthUser | undefined;
   if (!user)
-    throw createError({ statusCode: 401, statusMessage: "Não autenticado" });
+    throw createApiError({ statusCode: 401, message: "Não autenticado" });
   if (!permissions[user.role]?.includes(permission))
-    throw createError({
+    throw createApiError({
       statusCode: 403,
-      statusMessage: "Permissão insuficiente",
+      message: "Permissão insuficiente",
     });
   return user;
 }
@@ -227,9 +227,9 @@ export function assertCsrf(event: H3Event) {
   const cookie = getCookie(event, csrfCookie),
     header = getHeader(event, "x-csrf-token");
   if (!cookie || !header || cookie !== header)
-    throw createError({
+    throw createApiError({
       statusCode: 403,
-      statusMessage: "Token CSRF inválido",
+      message: "Token CSRF inválido",
     });
   assertSameOrigin(event);
 }
@@ -241,5 +241,5 @@ export function assertSameOrigin(event: H3Event) {
   let sourceOrigin = "";
   try { sourceOrigin = source ? new URL(source).origin : ""; } catch { /* rejected below */ }
   if (!sourceOrigin || !expected || sourceOrigin !== new URL(expected).origin)
-    throw createError({ statusCode: 403, statusMessage: "Origem inválida" });
+    throw createApiError({ statusCode: 403, message: "Origem inválida" });
 }

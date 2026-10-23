@@ -9,3 +9,10 @@ Antes de alterar a interface, filtros ou dados de produtos, leia `skills/rodri-p
 - O filtro de situação de produtos inicia em `Todos`; ativar ou inativar um produto sempre pede confirmação no modal compartilhado.
 - Para composições, custos, rendimentos, preços e margens dos modelos, use a planilha `Calçado Próprio - Final.xlsx` como referência. Não inclua componente cuja quantidade na planilha seja zero ou que não componha aquele modelo.
 - Ao corrigir dados já cobertos pela migração consolidada, ajuste a migração existente quando for seguro e idempotente; não crie outra migração sem necessidade. Atualize o banco local quando isso fizer parte do pedido.
+
+## Erros HTTP
+
+- Crie erros de API com o helper compartilhado `createApiError`, definido em `shared/utils/api-error.ts` e autoimportado pelo Nuxt.
+- Informe em cada chamada o `statusCode` correspondente ao erro real; não use um código genérico fixo para todos os erros.
+- Coloque a mensagem detalhada em `message`. Não use `statusMessage` para mensagens da aplicação, pois o H3 pode sanitizá-lo e emitir avisos.
+- Preserve os dados adicionais do erro quando necessários e, no cliente, prefira `data.message` ao apresentar a mensagem recebida.

@@ -11,10 +11,10 @@ export default defineNitroPlugin((nitroApp) => {
     }
     if (databaseMessages[error?.code]) {
       error.statusCode = error.code === '23505' ? 409 : 422
-      error.statusMessage = databaseMessages[error.code]
+      error.message = databaseMessages[error.code]
     } else if (!error.statusCode || error.statusCode >= 500) {
       error.statusCode = 500
-      error.statusMessage = 'Não foi possível concluir a solicitação. Tente novamente ou procure um administrador.'
+      error.message = 'Não foi possível concluir a solicitação. Tente novamente ou procure um administrador.'
     }
     const statusCode = Number(error.statusCode || 500)
     const user = (event.context as any).user
