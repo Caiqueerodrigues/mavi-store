@@ -1,4 +1,14 @@
-ALTER TABLE "materials" ADD COLUMN IF NOT EXISTS "cost_type" varchar(20) DEFAULT 'material' NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+    WHERE attrelid = 'materials'::regclass
+      AND attname = 'cost_type'
+      AND NOT attisdropped
+  ) THEN
+    ALTER TABLE "materials" ADD COLUMN "cost_type" varchar(20) DEFAULT 'material' NOT NULL;
+  END IF;
+END $$;
 --> statement-breakpoint
 WITH catalog(name,supplier,cost_type,unit,price,yield_quantity) AS (VALUES
   ('TOBOX 4 mm','Callmart - Casin','material','PAR',26.00,65.00),

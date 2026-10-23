@@ -2,7 +2,6 @@ export default defineEventHandler(async (event) => {
   requirePermission(event, 'costs:manage')
   await ensureDatabase()
   const sql = db()
-  await sql`ALTER TABLE materials ADD COLUMN IF NOT EXISTS cost_type varchar(20) NOT NULL DEFAULT 'material'`
   await sql.begin(async (tx) => {
     const version = '010_material_cost_types_repair'
     const applied = await tx`SELECT 1 FROM schema_migrations WHERE version=${version}`
