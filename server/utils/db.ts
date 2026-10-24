@@ -163,7 +163,7 @@ async function migrateAndSeed() {
         quantity NUMERIC(12,2) NOT NULL CHECK (quantity > 0),
         unit_price NUMERIC(12,4) NOT NULL CHECK (unit_price >= 0),
         paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
-        status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_production','ready','delivered','cancelled')),
+        status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_production','ready','delivered','completed','cancelled')),
         sizes JSONB NOT NULL DEFAULT '[]'::jsonb,
         withdrawal_date DATE,
         withdrawn_by VARCHAR(160),

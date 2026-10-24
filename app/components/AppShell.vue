@@ -67,7 +67,8 @@ const ready = ref(false),
   tab = ref(routeTabs[route.path] || "dashboard"),
   menuOpen = ref(false),
   busy = ref(false),
-  notice = ref("");
+  notice = ref(""),
+  noticeType = ref<"success" | "error">("success");
 const dashboard = ref<any>(null),
   orders = ref<Order[]>([]),
   customers = ref<Customer[]>([]),
@@ -389,9 +390,10 @@ async function api<T = any>(
   }
 }
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-function toast(message: string) {
+function toast(message: string, type: "success" | "error" = "success") {
   if (toastTimer) clearTimeout(toastTimer);
   notice.value = message;
+  noticeType.value = type;
   toastTimer = setTimeout(() => {
     notice.value = "";
     toastTimer = undefined;
@@ -585,6 +587,7 @@ onMounted(async () => {
       toast(
         error?.data?.message || error?.data?.statusMessage ||
           "Não foi possível carregar todos os dados. Tente novamente.",
+        "error",
       );
     }
   }
@@ -646,7 +649,7 @@ async function changePassword() {
     await loadRouteData();
     toast("Senha alterada com sucesso.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Revise os requisitos da senha");
+    toast(e?.data?.message || e?.data?.statusMessage || "Revise os requisitos da senha", "error");
   } finally {
     busy.value = false;
   }
@@ -700,6 +703,7 @@ watch(
         toast(
           error?.data?.message || error?.data?.statusMessage ||
             "Não foi possível carregar os dados desta página.",
+          "error",
         );
       }
     }
@@ -754,7 +758,7 @@ async function editOrder(item?: Order) {
       "/api/service-types?active=true",
     );
   } catch (error: any) {
-    toast(error?.data?.message || error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.");
+    toast(error?.data?.message || error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.", "error");
     return;
   }
   const firstCustomer = activeCustomers.value[0];
@@ -814,7 +818,7 @@ async function saveOrder() {
     await loadAudit();
     toast("Pedido salvo e auditado.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o pedido");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o pedido", "error");
   } finally {
     busy.value = false;
   }
@@ -837,7 +841,7 @@ async function applyBulkAction() {
     await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedidos atualizados em lote.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar os pedidos");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar os pedidos", "error");
   } finally {
     busy.value = false;
   }
@@ -852,7 +856,7 @@ async function cloneOrder(item: Order) {
     await Promise.all([loadOrders(), loadDashboard()]);
     toast("Pedido clonado.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível clonar o pedido.");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível clonar o pedido.", "error");
   } finally {
     busy.value = false;
   }
@@ -866,7 +870,7 @@ async function deleteOrder(item: Order) {
 async function pdf(item?: Order, selectedIds: number[] = []) {
   const ids = selectedIds.length ? selectedIds : item ? [item.id] : [];
   if (ids.length > 500) {
-    toast("Selecione no máximo 500 pedidos por PDF.");
+    toast("Selecione no máximo 500 pedidos por PDF.", "error");
     return;
   }
   const url = ids.length
@@ -874,7 +878,7 @@ async function pdf(item?: Order, selectedIds: number[] = []) {
     : "/api/orders/report.pdf";
   const pdfWindow = window.open("about:blank", "_blank");
   if (!pdfWindow) {
-    toast("Permita a abertura de uma nova aba para gerar o PDF.");
+    toast("Permita a abertura de uma nova aba para gerar o PDF.", "error");
     return;
   }
   pdfWindow.opener = null;
@@ -883,7 +887,7 @@ async function pdf(item?: Order, selectedIds: number[] = []) {
     response = await fetch(url, { credentials: "include" });
   } catch {
     pdfWindow.close();
-    toast("Não foi possível gerar o PDF.");
+    toast("Não foi possível gerar o PDF.", "error");
     return;
   }
   if (response.status === 401 || response.status === 403) {
@@ -903,7 +907,7 @@ async function pdf(item?: Order, selectedIds: number[] = []) {
   if (!response.ok) {
     pdfWindow.close();
     if (response.status === 401 || response.status === 403) forceLogin();
-    else toast("Não foi possível gerar o PDF.");
+    else toast("Não foi possível gerar o PDF.", "error");
     return;
   }
   const blob = await response.blob(),
@@ -958,7 +962,7 @@ async function saveProfile() {
     profileModal.value = false;
     toast("Perfil atualizado.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar o perfil");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível atualizar o perfil", "error");
   } finally {
     busy.value = false;
   }
@@ -975,7 +979,7 @@ async function saveUser() {
     await loadAudit();
     toast("Usuário salvo.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o usuário");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o usuário", "error");
   } finally {
     busy.value = false;
   }
@@ -1018,7 +1022,7 @@ async function copyAuditDetails(details: unknown) {
     await navigator.clipboard.writeText(JSON.stringify(details ?? {}, null, 2));
     toast("Detalhes copiados.");
   } catch {
-    toast("Não foi possível copiar os detalhes.");
+    toast("Não foi possível copiar os detalhes.", "error");
   }
 }
 const materialModal = ref(false),
@@ -1144,7 +1148,7 @@ async function saveProduct() {
     dashboard.value = await api("/api/dashboard");
     toast("Produto salvo.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o produto");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o produto", "error");
   } finally {
     busy.value = false;
   }
@@ -1168,7 +1172,7 @@ async function toggleProductActive(item: Product) {
     dashboard.value = await api("/api/dashboard");
     toast(active ? "Produto ativado." : "Produto inativado.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível alterar a situação do produto");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível alterar a situação do produto", "error");
   } finally {
     busy.value = false;
   }
@@ -1212,7 +1216,7 @@ async function saveChannel() {
     dashboard.value = await api("/api/dashboard");
     toast("Canal de venda salvo.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o canal");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o canal", "error");
   } finally {
     busy.value = false;
   }
@@ -1245,7 +1249,7 @@ async function saveCustomer() {
     await loadFilteredTable("customers");
     toast("Cliente salvo.");
   } catch (e: any) {
-    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o cliente");
+    toast(e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o cliente", "error");
   } finally {
     busy.value = false;
   }
@@ -1279,6 +1283,7 @@ async function saveServiceType() {
   } catch (e: any) {
     toast(
       e?.data?.message || e?.data?.statusMessage || "Não foi possível salvar o tipo de serviço",
+      "error",
     );
   } finally {
     busy.value = false;
@@ -2744,8 +2749,8 @@ async function saveServiceType() {
       </form>
     </div>
     <Transition name="toast"
-      ><div v-if="notice" class="toast">
-        <Icon name="lucide:info" />{{ notice }}
+      ><div v-if="notice" class="toast" :class="`toast-${noticeType}`">
+        <Icon :name="noticeType === 'success' ? 'lucide:circle-check' : 'lucide:circle-x'" />{{ notice }}
       </div></Transition
     >
     <ConfirmModal
