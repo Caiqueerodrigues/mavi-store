@@ -199,7 +199,17 @@ async function migrateAndSeed() {
     }
 
   })
-  await migrate(drizzle(sql), { migrationsFolder: resolve(process.cwd(), 'drizzle') })
+  const config = runtimeDatabaseConfig()
+  const migrationClient = postgres(String(config.databaseUrl), {
+    max: 1,
+    prepare: false,
+    connection: { TimeZone: String(config.appTimeZone || 'America/Sao_Paulo') }
+  })
+  try {
+    await migrate(drizzle(migrationClient), { migrationsFolder: resolve(process.cwd(), 'drizzle') })
+  } finally {
+    await migrationClient.end()
+  }
   await secureInitialAdmin(sql)
 }
 
