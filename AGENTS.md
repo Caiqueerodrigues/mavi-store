@@ -1,5 +1,7 @@
 # Convenções do projeto
 
+- Filtros de período devem iniciar no dia anterior até a data atual, inclusive ao restaurar os filtros padrão.
+
 Antes de alterar a interface, filtros ou dados de produtos, leia `skills/rodri-project-guidelines/SKILL.md` e mantenha estas regras:
 
 - Toda confirmação, inclusive confirmações simples, deve usar um componente modal reutilizável com o padrão visual da aplicação. Não use `window.confirm`, `alert` nem confirmações nativas do navegador.

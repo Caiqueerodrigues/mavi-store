@@ -4,8 +4,8 @@ export default defineEventHandler(async (event) => {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(query.from || '')) ? String(query.from) : ''
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(query.to || '')) ? String(query.to) : ''
   const [period] = await db()`SELECT
-    COALESCE(NULLIF(${from}::text, '')::date, date_trunc('month', CURRENT_DATE)::date) AS date_from,
-    LEAST(COALESCE(NULLIF(${to}::text, '')::date, CURRENT_DATE), CURRENT_DATE) AS date_to`
+    to_char(COALESCE(NULLIF(${from}::text, '')::date, date_trunc('month', CURRENT_DATE)::date), 'YYYY-MM-DD') AS date_from,
+    to_char(LEAST(COALESCE(NULLIF(${to}::text, '')::date, CURRENT_DATE), CURRENT_DATE), 'YYYY-MM-DD') AS date_to`
   if (period!.dateFrom > period!.dateTo) throw createApiError({ statusCode: 422, message: 'A data inicial não pode ser maior que a data final' })
   const [summary] = await db()`SELECT COUNT(*)::int AS orders,
     COALESCE(SUM(quantity * unit_price), 0)::float8 AS total_value,
@@ -28,5 +28,9 @@ export default defineEventHandler(async (event) => {
   const statuses = await db()`SELECT status AS name, COUNT(*)::int AS total
     FROM orders WHERE deleted_at IS NULL AND order_date >= ${period!.dateFrom} AND order_date < (${period!.dateTo}::date + INTERVAL '1 day')
     GROUP BY status ORDER BY total DESC`
-  return { period: { from: period!.dateFrom, to: period!.dateTo }, summary, byService, byCustomer, statuses }
+  const recentOrders = await db()`SELECT id, order_number, customer_name, product_description,
+    quantity::float8, (quantity * unit_price)::float8 AS total, status
+    FROM orders WHERE deleted_at IS NULL
+    ORDER BY created_at DESC, id DESC LIMIT 6`
+  return { period: { from: period!.dateFrom, to: period!.dateTo }, summary, byService, byCustomer, statuses, recentOrders }
 })

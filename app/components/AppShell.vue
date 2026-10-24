@@ -127,6 +127,7 @@ const pendingTableReloads: Record<string, (() => void) | undefined> = {};
 let productRequestId = 0;
 let dashboardRequestId = 0;
 let pendingAuditReload = false;
+let dateFilterDefaultsInitialized = false;
 const tableFilters = reactive({
   customers: { search: "", active: "", sort: "name", direction: "asc" },
   materials: { search: "", active: "", costType: "", sort: "name", direction: "asc" },
@@ -415,10 +416,17 @@ function syncServerTime(headers: Headers) {
   if (value) {
     serverTime.value = value;
     const today = value.slice(0, 10);
-    if (!dashboardFilters.from) dashboardFilters.from = `${today.slice(0, 7)}-01`;
-    if (!dashboardFilters.to) dashboardFilters.to = today;
-    if (!orderFilters.from) orderFilters.from = today;
-    if (!orderFilters.to) orderFilters.to = today;
+    if (!dateFilterDefaultsInitialized) {
+      const [year, month, day] = today.split("-").map(Number);
+      const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
+        .toISOString()
+        .slice(0, 10);
+      dashboardFilters.from = yesterday;
+      dashboardFilters.to = today;
+      orderFilters.from = yesterday;
+      orderFilters.to = today;
+      dateFilterDefaultsInitialized = true;
+    }
   }
 }
 function openDatePicker(event: Event) {
@@ -661,7 +669,11 @@ async function loadOrders() {
 async function resetOrderFilters() {
   cancelFilterDebounce("orders");
   const today = serverTime.value.slice(0, 10);
-  Object.assign(orderFilters, { search: "", from: today, to: today, status: "", paymentStatus: "" });
+  const [year, month, day] = today.split("-").map(Number);
+  const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
+    .toISOString()
+    .slice(0, 10);
+  Object.assign(orderFilters, { search: "", from: yesterday, to: today, status: "", paymentStatus: "" });
   await loadOrders();
 }
 onMounted(async () => {
@@ -1606,7 +1618,7 @@ async function saveServiceType() {
           <div class="panel chart-panel">
             <div class="panel-head"><div><span class="eyebrow">Produção</span><h3>Serviços por situação</h3></div><Icon name="lucide:chart-bar-big" class="panel-icon" /></div>
             <div class="bar-chart status-chart">
-              <div v-for="item in dashboard?.statuses || []" :key="item.name" class="bar-row">
+              <div v-for="item in dashboard?.statuses || []" :key="item.name" :class="['bar-row', 'status-row', item.name]">
                 <div><strong>{{ statusLabels[item.name] || item.name }}</strong></div>
                 <span><i :style="{ width: `${(item.total / dashboardStatusMax) * 100}%` }" /></span><b>{{ item.total }}</b>
               </div>
@@ -1636,7 +1648,7 @@ async function saveServiceType() {
           </div>
           <div class="product-list">
             <div
-              v-for="o in orders.slice(0, 6)"
+              v-for="o in dashboard?.recentOrders || []"
               :key="o.id"
               class="product-row"
             >
@@ -1651,9 +1663,9 @@ async function saveServiceType() {
               <div>
                 <small>Total</small><strong>{{ money(o.total) }}</strong>
               </div>
-              <span class="profit-pill">{{ statusLabels[o.status] }}</span>
+              <span :class="['status-badge', o.status]">{{ statusLabels[o.status] }}</span>
             </div>
-            <div v-if="!orders.length" class="empty">
+            <div v-if="!dashboard?.recentOrders?.length" class="empty">
               Nenhum serviço cadastrado ainda.
             </div>
           </div>

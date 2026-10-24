@@ -56,6 +56,7 @@ function handleKeydown(event: KeyboardEvent) {
 <style scoped>
 .tag-multiselect {
   min-height: 44px;
+  margin-top: 6px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

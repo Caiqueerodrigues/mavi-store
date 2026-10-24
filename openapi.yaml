@@ -322,7 +322,7 @@ components:
         active: { type: boolean, default: true }
     Dashboard:
       type: object
-      required: [period, summary, byService, byCustomer, statuses]
+      required: [period, summary, byService, byCustomer, statuses, recentOrders]
       properties:
         period:
           type: object
@@ -337,6 +337,19 @@ components:
             type: object
             required: [name, total]
             properties: { name: { type: string }, total: { type: integer } }
+        recentOrders:
+          type: array
+          items:
+            type: object
+            required: [id, orderNumber, customerName, productDescription, quantity, total, status]
+            properties:
+              id: { type: integer }
+              orderNumber: { type: string }
+              customerName: { type: string }
+              productDescription: { type: string }
+              quantity: { type: number }
+              total: { type: number }
+              status: { type: string }
     DashboardBreakdown:
       type: object
       required: [name, orders, total, paid]

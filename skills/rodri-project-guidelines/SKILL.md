@@ -18,6 +18,7 @@ Use this skill for changes to this application's interface, APIs, filters, produ
 - Apply filters at the API/database layer. Do not fetch a broad collection and filter it in Vue computed properties or templates.
 - Send filter state to the server when it changes and display the returned page/results directly.
 - Date filters must trigger a backend search immediately after a date is selected, without a debounce.
+- Date range filters must default to yesterday through today, including when restoring the default filters.
 - Text, numeric, and all other filter input types must wait for 500 ms without further changes before triggering a backend search (debounce).
 - Populate filter options from an API source when deriving them from the filtered result set could hide valid options.
 - Put the inclusive option (`Todos`, `Todas`, or equivalent) first in every filter select.
