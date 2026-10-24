@@ -82,6 +82,11 @@ const dashboard = ref<any>(null),
   auditData = ref<any>({ items: [], total: 0 });
 const tablePages = reactive<Record<string, { offset: number; total: number; loading: boolean }>>({});
 const tablePageSize = 50;
+const filterDebounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const pendingTableReloads: Record<string, (() => void) | undefined> = {};
+let productRequestId = 0;
+let dashboardRequestId = 0;
+let pendingAuditReload = false;
 const tableFilters = reactive({
   customers: { search: "", active: "", sort: "name", direction: "asc" },
   materials: { search: "", active: "", costType: "", sort: "name", direction: "asc" },
@@ -92,7 +97,11 @@ const tableFilters = reactive({
 });
 async function fetchTablePage<T>(key: string, url: string, getRows: () => T[], setRows: (rows: T[]) => void, reset = false) {
   const state = tablePages[key] ||= { offset: 0, total: 0, loading: false };
-  if (state.loading || (!reset && state.offset >= state.total && state.total > 0)) return;
+  if (state.loading) {
+    if (reset) pendingTableReloads[key] = () => { void fetchTablePage(key, url, getRows, setRows, true); };
+    return;
+  }
+  if (!reset && state.offset >= state.total && state.total > 0) return;
   if (reset) { state.offset = 0; state.total = 0; }
   state.loading = true;
   try {
@@ -104,7 +113,35 @@ async function fetchTablePage<T>(key: string, url: string, getRows: () => T[], s
     setRows(reset ? page.items : [...getRows(), ...page.items]);
     state.offset = page.offset + page.items.length;
     state.total = page.total;
-  } finally { state.loading = false; }
+  } finally {
+    state.loading = false;
+    const pendingReload = pendingTableReloads[key];
+    delete pendingTableReloads[key];
+    pendingReload?.();
+  }
+}
+function debounceFilter(key: string, load: () => unknown) {
+  clearTimeout(filterDebounceTimers[key]);
+  filterDebounceTimers[key] = setTimeout(() => {
+    delete filterDebounceTimers[key];
+    void load();
+  }, 500);
+}
+function cancelFilterDebounce(key: string) {
+  clearTimeout(filterDebounceTimers[key]);
+  delete filterDebounceTimers[key];
+}
+function scheduleTableFilter(key: "customers" | "materials" | "serviceTypes" | "channels" | "users") {
+  debounceFilter(`table:${key}`, () => loadFilteredTable(key));
+}
+function scheduleOrderFilter() {
+  debounceFilter("orders", loadOrders);
+}
+function scheduleProductFilter() {
+  debounceFilter("products", loadProducts);
+}
+function scheduleAuditFilter() {
+  debounceFilter("audit", () => loadAudit(true));
 }
 function tableScroll(key: string, event: Event, load: () => Promise<void>) {
   const el = event.currentTarget as HTMLElement;
@@ -123,6 +160,7 @@ function loadNextTable(key: string) {
   return requests[key]?.() || Promise.resolve();
 }
 function loadFilteredTable(key: "customers" | "materials" | "serviceTypes" | "channels" | "users", reset = true) {
+  cancelFilterDebounce(`table:${key}`);
   const config = {
     customers: { path: "/api/customers", rows: customers },
     materials: { path: "/api/materials", rows: materials },
@@ -134,6 +172,7 @@ function loadFilteredTable(key: "customers" | "materials" | "serviceTypes" | "ch
   return fetchTablePage<any>(key, `${config.path}?${params}`, () => config.rows.value, (value) => (config.rows.value = value), reset);
 }
 async function resetTableFilters(key: "customers" | "materials" | "serviceTypes" | "channels" | "users") {
+  cancelFilterDebounce(`table:${key}`);
   Object.keys(tableFilters[key]).filter((field) => !["sort", "direction"].includes(field)).forEach((field) => ((tableFilters[key] as any)[field] = ""));
   await loadFilteredTable(key);
 }
@@ -551,18 +590,25 @@ async function loadProductOptions() {
   productCategories.value = await api<string[]>("/api/products/categories");
 }
 async function loadProducts() {
+  cancelFilterDebounce("products");
   const query = new URLSearchParams({ active: productStatus.value });
   if (productCategory.value) query.set("category", productCategory.value);
-  products.value = await api<Product[]>(`/api/products?${query.toString()}`);
+  const requestId = ++productRequestId;
+  const result = await api<Product[]>(`/api/products?${query.toString()}`);
+  if (requestId === productRequestId) products.value = result;
 }
 async function loadDashboard() {
-  dashboard.value = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
+  const requestId = ++dashboardRequestId;
+  const result = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
+  if (requestId === dashboardRequestId) dashboard.value = result;
 }
 async function loadOrders() {
+  cancelFilterDebounce("orders");
   await fetchTablePage("orders", `/api/orders?${new URLSearchParams(orderFilters).toString()}`, () => orders.value, (v) => (orders.value = v), true);
   selectedOrders.value = [];
 }
 async function resetOrderFilters() {
+  cancelFilterDebounce("orders");
   const today = serverTime.value.slice(0, 10);
   Object.assign(orderFilters, { search: "", from: today, to: today, status: "", paymentStatus: "" });
   await loadOrders();
@@ -991,9 +1037,14 @@ async function deleteUser(item: User) {
   toast("Usuário removido.");
 }
 async function loadAudit(reset = true) {
+  cancelFilterDebounce("audit");
   if (!canAudit.value) return;
   if (!reset) return loadAuditPage(false);
   const state = tablePages.audit ||= { offset: 0, total: 0, loading: false };
+  if (state.loading) {
+    pendingAuditReload = true;
+    return;
+  }
   state.offset = 0;
   state.total = 0;
   auditData.value = { items: [], total: 0 };
@@ -1011,7 +1062,13 @@ async function loadAuditPage(reset = false) {
     auditData.value = { ...page, items: reset ? page.items : [...auditData.value.items, ...page.items] };
     state.offset = pageNumber * page.limit;
     state.total = page.total;
-  } finally { state.loading = false; }
+  } finally {
+    state.loading = false;
+    if (pendingAuditReload) {
+      pendingAuditReload = false;
+      void loadAudit(true);
+    }
+  }
 }
 function auditDetails(details: unknown) {
   if (!details || (typeof details === "object" && !Object.keys(details).length)) return "—";
@@ -1420,8 +1477,8 @@ async function saveServiceType() {
           </button>
         </div>
         <form class="panel period-filters" @submit.prevent="loadDashboard">
-          <label>De<input v-model="dashboardFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
-          <label>Até<input v-model="dashboardFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
+          <label>De<input v-model="dashboardFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadDashboard" /></label>
+          <label>Até<input v-model="dashboardFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadDashboard" /></label>
           <button class="button"><Icon name="lucide:filter" />Atualizar período</button>
         </form>
         <div class="metrics">
@@ -1558,11 +1615,11 @@ async function saveServiceType() {
           </div>
         </div>
         <form class="panel order-filters" @submit.prevent="loadOrders">
-          <label>Buscar<input v-model.trim="orderFilters.search" type="search" placeholder="Cliente, serviço ou observação" /></label>
-          <label>De<input v-model="orderFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
-          <label>Até<input v-model="orderFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" /></label>
-          <label>Situação da produção<select v-model="orderFilters.status" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Buscar<input v-model.trim="orderFilters.search" type="search" placeholder="Cliente, serviço ou observação" @input="scheduleOrderFilter" /></label>
+          <label>De<input v-model="orderFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadOrders" /></label>
+          <label>Até<input v-model="orderFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadOrders" /></label>
+          <label>Situação da produção<select v-model="orderFilters.status" @change="scheduleOrderFilter"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus" @change="scheduleOrderFilter"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetOrderFilters">Hoje</button>
         </form>
@@ -1713,8 +1770,8 @@ async function saveServiceType() {
           </button>
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('customers')">
-          <label>Buscar<input v-model.trim="tableFilters.customers.search" type="search" placeholder="Nome, apelido ou telefone" /></label>
-          <label>Situação<select v-model="tableFilters.customers.active" @change="loadFilteredTable('customers')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <label>Buscar<input v-model.trim="tableFilters.customers.search" type="search" placeholder="Nome, apelido ou telefone" @input="scheduleTableFilter('customers')" /></label>
+          <label>Situação<select v-model="tableFilters.customers.active" @change="scheduleTableFilter('customers')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetTableFilters('customers')">Limpar</button>
           <span class="table-count">{{ tablePages.customers?.total || 0 }} registro(s)</span>
@@ -1774,7 +1831,7 @@ async function saveServiceType() {
           </div>
           <div class="head-actions">
           <label class="category-filter"
-            >Categoria<select v-model="productCategory" @change="loadProducts">
+            >Categoria<select v-model="productCategory" @change="scheduleProductFilter">
               <option value="">Todas as categorias</option>
               <option
                 v-for="category in productCategories"
@@ -1785,7 +1842,7 @@ async function saveServiceType() {
               </option>
             </select></label>
           <label class="category-filter"
-            >Situação<select v-model="productStatus" @change="loadProducts">
+            >Situação<select v-model="productStatus" @change="scheduleProductFilter">
               <option value="all">Todos</option>
               <option value="true">Ativos</option>
               <option value="false">Inativos</option>
@@ -1856,9 +1913,9 @@ async function saveServiceType() {
           </button>
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('materials')">
-          <label>Buscar<input v-model.trim="tableFilters.materials.search" type="search" placeholder="Insumo, fornecedor ou unidade" /></label>
-          <label>Tipo<select v-model="tableFilters.materials.costType" @change="loadFilteredTable('materials')"><option value="">Todos</option><option v-for="(label, key) in costTypeLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação<select v-model="tableFilters.materials.active" @change="loadFilteredTable('materials')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <label>Buscar<input v-model.trim="tableFilters.materials.search" type="search" placeholder="Insumo, fornecedor ou unidade" @input="scheduleTableFilter('materials')" /></label>
+          <label>Tipo<select v-model="tableFilters.materials.costType" @change="scheduleTableFilter('materials')"><option value="">Todos</option><option v-for="(label, key) in costTypeLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.materials.active" @change="scheduleTableFilter('materials')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetTableFilters('materials')">Limpar</button>
           <span class="table-count">{{ tablePages.materials?.total || 0 }} registro(s)</span>
@@ -1935,8 +1992,8 @@ async function saveServiceType() {
           </button>
         </div>
         <form v-if="parameterTab === 'services'" class="panel data-table-filters" @submit.prevent="loadFilteredTable('serviceTypes')">
-          <label>Buscar<input v-model.trim="tableFilters.serviceTypes.search" type="search" placeholder="Nome do serviço" /></label>
-          <label>Situação<select v-model="tableFilters.serviceTypes.active" @change="loadFilteredTable('serviceTypes')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <label>Buscar<input v-model.trim="tableFilters.serviceTypes.search" type="search" placeholder="Nome do serviço" @input="scheduleTableFilter('serviceTypes')" /></label>
+          <label>Situação<select v-model="tableFilters.serviceTypes.active" @change="scheduleTableFilter('serviceTypes')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetTableFilters('serviceTypes')">Limpar</button>
           <span class="table-count">{{ tablePages.serviceTypes?.total || 0 }} registro(s)</span>
@@ -2024,8 +2081,8 @@ async function saveServiceType() {
           </div>
           <p class="panel-description">Configure a comissão percentual e a tarifa fixa cobrada por unidade.</p>
           <form class="data-table-filters inline-filters" @submit.prevent="loadFilteredTable('channels')">
-            <label>Buscar<input v-model.trim="tableFilters.channels.search" type="search" placeholder="Nome do canal" /></label>
-            <label>Situação<select v-model="tableFilters.channels.active" @change="loadFilteredTable('channels')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+            <label>Buscar<input v-model.trim="tableFilters.channels.search" type="search" placeholder="Nome do canal" @input="scheduleTableFilter('channels')" /></label>
+            <label>Situação<select v-model="tableFilters.channels.active" @change="scheduleTableFilter('channels')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
             <button class="button"><Icon name="lucide:search" />Filtrar</button>
             <button type="button" class="button ghost" @click="resetTableFilters('channels')">Limpar</button>
             <span class="table-count">{{ tablePages.channels?.total || 0 }} registro(s)</span>
@@ -2055,9 +2112,9 @@ async function saveServiceType() {
           </button>
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('users')">
-          <label>Buscar<input v-model.trim="tableFilters.users.search" type="search" placeholder="Nome ou e-mail" /></label>
-          <label>Perfil<select v-model="tableFilters.users.role" @change="loadFilteredTable('users')"><option value="">Todos</option><option v-for="(label, key) in roleLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação<select v-model="tableFilters.users.active" @change="loadFilteredTable('users')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <label>Buscar<input v-model.trim="tableFilters.users.search" type="search" placeholder="Nome ou e-mail" @input="scheduleTableFilter('users')" /></label>
+          <label>Perfil<select v-model="tableFilters.users.role" @change="scheduleTableFilter('users')"><option value="">Todos</option><option v-for="(label, key) in roleLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.users.active" @change="scheduleTableFilter('users')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="resetTableFilters('users')">Limpar</button>
           <span class="table-count">{{ tablePages.users?.total || 0 }} registro(s)</span>
@@ -2131,7 +2188,7 @@ async function saveServiceType() {
           </button>
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadAudit()">
-          <label>Buscar<input v-model.trim="tableFilters.audit.search" type="search" placeholder="Usuário, ação ou entidade" /></label>
+          <label>Buscar<input v-model.trim="tableFilters.audit.search" type="search" placeholder="Usuário, ação ou entidade" @input="scheduleAuditFilter" /></label>
           <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="tableFilters.audit.search = ''; loadAudit()">Limpar</button>
           <span class="table-count">{{ auditData.total || 0 }} registro(s)</span>

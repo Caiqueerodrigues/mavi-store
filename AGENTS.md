@@ -4,6 +4,8 @@ Antes de alterar a interface, filtros ou dados de produtos, leia `skills/rodri-p
 
 - Toda confirmação, inclusive confirmações simples, deve usar um componente modal reutilizável com o padrão visual da aplicação. Não use `window.confirm`, `alert` nem confirmações nativas do navegador.
 - Filtros de listagens devem ser aplicados pela API/banco, nunca filtrando as coleções no frontend. Ao mudar um filtro, buscar os resultados correspondentes no servidor.
+- Filtros de data devem buscar no backend imediatamente após a seleção da data, sem debounce.
+- Inputs de texto, número e demais tipos usados como filtro devem aguardar 500 ms sem novas alterações antes de buscar no backend (debounce).
 - Em todo select de filtro, a opção abrangente (`Todos`, `Todas` ou equivalente) deve ser a primeira opção.
 - Registros inativos precisam continuar acessíveis pelo filtro de situação e ter aparência claramente distinta, sem parecer excluídos.
 - O filtro de situação de produtos inicia em `Todos`; ativar ou inativar um produto sempre pede confirmação no modal compartilhado.
