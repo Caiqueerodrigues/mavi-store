@@ -7,12 +7,6 @@ FROM dependencies AS build
 COPY . .
 RUN pnpm build
 
-FROM dependencies AS migration
-COPY server ./server
-COPY drizzle ./drizzle
-COPY tsconfig.json drizzle.config.ts ./
-CMD ["pnpm", "db:migrate"]
-
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
