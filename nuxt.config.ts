@@ -21,7 +21,9 @@ export default defineNuxtConfig({
     jwtRefreshSecret: 'development-refresh-secret-change-me-32chars',
     cookieSecure: false,
     appOrigin: '',
-    trustProxy: false,
+    // Em produÃ§Ã£o, o app roda atrÃ¡s do proxy reverso do Dokploy.
+    // NUXT_TRUST_PROXY=false pode desativar isso em ambientes sem proxy confiÃ¡vel.
+    trustProxy: process.env.NODE_ENV === 'production',
     appTimeZone: 'America/Sao_Paulo'
   },
   app: {

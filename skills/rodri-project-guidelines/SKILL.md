@@ -22,6 +22,12 @@ Use this skill for changes to this application's interface, APIs, filters, produ
 - Populate filter options from an API source when deriving them from the filtered result set could hide valid options.
 - Put the inclusive option (`Todos`, `Todas`, or equivalent) first in every filter select.
 
+## List and detail data
+
+- Return only the fields rendered by a list endpoint, plus fields required for filtering, sorting, pagination, and row actions. Do not include large JSON fields or related records that the list does not display.
+- When a user opens a list item for details or editing, fetch the full record through its individual GET endpoint using the item ID. Treat the list object as a summary, not as the source for a detail form.
+- Load heavy relations and JSON details only when the user opens the related item or expands its details.
+
 ## Inactive records
 
 - Keep inactive records available through the situation filter; do not make inactivation indistinguishable from deletion.

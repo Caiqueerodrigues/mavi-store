@@ -1,4 +1,4 @@
-export async function listProducts(productId?: number, active: boolean | null = true, category?: string) {
+export async function listProducts(productId?: number, active: boolean | null = true, category?: string, includeComponents = true) {
   const sql = db()
   await sql.begin(async (tx) => {
     const version = '011_restore_spreadsheet_component_quantities'
@@ -27,7 +27,8 @@ export async function listProducts(productId?: number, active: boolean | null = 
       FROM product_components pc JOIN materials m ON m.id = pc.material_id
       GROUP BY pc.product_id
     )
-    SELECT p.*, COALESCE(c.production_cost, 0)::float8 AS production_cost,
+    SELECT p.id, p.name, p.sku, p.category, p.color, p.variations, p.current_price, p.active,
+      COALESCE(c.production_cost, 0)::float8 AS production_cost,
       sc.fixed_fee::float8, sc.percentage_fee::float8,
       COALESCE(p.target_profit,s.target_profit)::float8 AS target_profit,
       ((COALESCE(c.production_cost, 0) + sc.fixed_fee + COALESCE(p.target_profit,s.target_profit)) / (1 - sc.percentage_fee))::float8 AS minimum_price,
@@ -40,22 +41,28 @@ export async function listProducts(productId?: number, active: boolean | null = 
     ORDER BY p.name
   `
   const ids = rows.map((r) => r.id)
-  const components = ids.length ? await sql`
+  const components = includeComponents
+    ? ids.length
+      ? await sql`
     SELECT pc.id, pc.product_id, pc.material_id, m.name AS material_name, m.unit,
       pc.quantity::float8, pc.waste_percent::float8,
       (m.purchase_price / m.purchase_quantity)::float8 AS unit_cost,
       ((m.purchase_price / m.purchase_quantity) * pc.quantity * (1 + pc.waste_percent))::float8 AS total_cost
     FROM product_components pc JOIN materials m ON m.id = pc.material_id
     WHERE pc.product_id IN ${sql(ids)} ORDER BY pc.id
-  ` : []
+      `
+      : []
+    : []
   return rows.map((r) => ({
     id: r.id, name: r.name, sku: r.sku, category: r.category, color: r.color, active: r.active,
     currentPrice: Number(r.currentPrice), productionCost: r.productionCost,
     minimumPrice: r.minimumPrice, expectedProfit: r.targetProfit, currentProfit: r.currentProfit,
-    components: components.filter((c) => c.productId === r.id).map((c) => ({
+    ...(includeComponents ? {
+      variations: Array.isArray(r.variations) ? r.variations : [],
+      components: components.filter((c) => c.productId === r.id).map((c) => ({
       id: c.id, materialId: c.materialId, materialName: c.materialName, unit: c.unit,
       quantity: c.quantity, wastePercent: c.wastePercent, unitCost: c.unitCost, totalCost: c.totalCost
-    }))
+    })) } : {})
   }))
 }
 

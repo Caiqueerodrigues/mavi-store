@@ -4,6 +4,8 @@ Antes de alterar a interface, filtros ou dados de produtos, leia `skills/rodri-p
 
 - Toda confirmação, inclusive confirmações simples, deve usar um componente modal reutilizável com o padrão visual da aplicação. Não use `window.confirm`, `alert` nem confirmações nativas do navegador.
 - Filtros de listagens devem ser aplicados pela API/banco, nunca filtrando as coleções no frontend. Ao mudar um filtro, buscar os resultados correspondentes no servidor.
+- Endpoints de listagem devem retornar somente os campos necessários para a própria listagem; não incluir campos extensos ou relações que a tela da lista não exibe.
+- Ao abrir um registro da listagem para consultar ou editar, buscar seus dados completos por um GET individual pelo ID. Não depender do objeto resumido da listagem como fonte dos dados do formulário.
 - Filtros de data devem buscar no backend imediatamente após a seleção da data, sem debounce.
 - Inputs de texto, número e demais tipos usados como filtro devem aguardar 500 ms sem novas alterações antes de buscar no backend (debounce).
 - Em todo select de filtro, a opção abrangente (`Todos`, `Todas` ou equivalente) deve ser a primeira opção.

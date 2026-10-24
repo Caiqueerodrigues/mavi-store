@@ -7,9 +7,10 @@ export async function brasiliaNow() {
   return `${row!.value}-03:00`;
 }
 
-export function formatBrasiliaDate(value?: string | null) {
+export function formatBrasiliaDate(value?: string | Date | null) {
   if (!value) return "—";
-  const [year, month, day] = String(value).slice(0, 10).split("-");
+  const dateOnly = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const [year, month, day] = dateOnly.split("-");
   return year && month && day ? `${day}/${month}/${year}` : "—";
 }
 

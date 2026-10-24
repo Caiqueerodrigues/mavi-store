@@ -28,6 +28,8 @@ export const productSchema = z.object({
   sku: z.string().trim().min(1).max(80),
   category: z.string().trim().min(2).max(60),
   color: z.string().trim().max(120).nullable().optional(),
+  variations: z.array(z.string().trim().min(1).max(60)).max(40).default([])
+    .transform((items) => [...new Set(items)]),
   currentPrice: z.coerce.number().nonnegative(),
   components: z.array(componentSchema).min(1)
 })

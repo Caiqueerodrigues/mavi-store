@@ -2,8 +2,8 @@ export default defineEventHandler(async (event) => {
   requirePermission(event, 'costs:manage')
   const input = await validatedBody(event, productSchema)
   const id = await db().begin(async (tx) => {
-    const [row] = await tx`INSERT INTO products (name, sku, category, color, current_price)
-      VALUES (${input.name}, ${input.sku}, ${input.category}, ${input.color || null}, ${input.currentPrice}) RETURNING id`
+    const [row] = await tx`INSERT INTO products (name, sku, category, color, variations, current_price)
+      VALUES (${input.name}, ${input.sku}, ${input.category}, ${input.color || null}, ${JSON.stringify(input.variations)}::jsonb, ${input.currentPrice}) RETURNING id`
     await saveComponents(tx as any, row!.id, input.components)
     return row!.id as number
   })

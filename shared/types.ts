@@ -27,6 +27,7 @@ export type Product = {
   sku: string
   category: string
   color: string | null
+  variations: string[]
   currentPrice: number
   active: boolean
   components: Component[]

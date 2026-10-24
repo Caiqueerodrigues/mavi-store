@@ -40,6 +40,11 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
   /materials/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém todos os dados do insumo selecionado
+      responses:
+        '200': { description: Insumo completo, content: { application/json: { schema: { $ref: '#/components/schemas/Material' } } } }
+        '404': { description: Insumo não encontrado }
     put:
       summary: Atualiza um insumo e afeta os próximos cálculos
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialInput' } } } }
@@ -65,7 +70,7 @@ paths:
           schema: { type: string, maxLength: 60 }
           description: Filtra os produtos por categoria
       responses:
-        '200': { description: Produtos conforme o filtro de situação, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Product' } } } } }
+        '200': { description: Resumos dos produtos; a composição é carregada pelo GET individual, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ProductList' } } } } }
     post:
       summary: Cria produto e ficha técnica atomicamente
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductInput' } } } }
@@ -79,6 +84,11 @@ paths:
         '200': { description: Categorias de produtos, content: { application/json: { schema: { type: array, items: { type: string } } } } }
   /products/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém o produto selecionado e sua composição completa
+      responses:
+        '200': { description: Produto e componentes, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '404': { description: Produto não encontrado }
     put:
       summary: Substitui os dados e a composição do produto
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductInput' } } } }
@@ -117,6 +127,11 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelInput' } } } }
       responses:
         '201': { description: Canal criado }
+  /channels/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém os dados completos do canal selecionado
+      responses: { '200': { description: Canal de venda }, '404': { description: Canal não encontrado } }
   /settings:
     get:
       summary: Obtém regra padrão de precificação
@@ -185,6 +200,9 @@ paths:
       responses: { '201': { description: Usuário criado com troca obrigatória de senha }, '409': { description: E-mail já cadastrado } }
   /users/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém os dados do usuário selecionado sem expor credenciais
+      responses: { '200': { description: Dados do usuário }, '404': { description: Usuário não encontrado } }
     put:
       summary: Atualiza perfil, status ou redefine senha; requer Administrador
       parameters: [{ $ref: '#/components/parameters/Csrf' }]
@@ -207,6 +225,9 @@ paths:
       responses: { '201': { description: Tipo de serviço criado }, '409': { description: Nome já cadastrado }, '422': { $ref: '#/components/responses/ValidationError' } }
   /service-types/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém os dados completos do tipo de serviço selecionado
+      responses: { '200': { description: Tipo de serviço }, '404': { description: Tipo não encontrado } }
     put:
       summary: Atualiza um tipo de serviço terceirizado
       parameters: [{ $ref: '#/components/parameters/Csrf' }]
@@ -229,6 +250,9 @@ paths:
       responses: { '201': { description: Pedido criado }, '409': { description: Número duplicado } }
   /orders/{id}:
     parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém o pedido selecionado, incluindo grade e observações
+      responses: { '200': { description: Pedido completo }, '404': { description: Pedido não encontrado } }
     put:
       summary: Edita um pedido
       parameters: [{ $ref: '#/components/parameters/Csrf' }]
@@ -254,10 +278,27 @@ paths:
         '400': { description: IDs inválidos ou mais de 500 pedidos selecionados }
   /audit:
     get:
-      summary: Lista paginada dos registros imutáveis de auditoria
+      summary: Lista paginada com metadados resumidos dos registros de auditoria
       parameters:
         - { name: search, in: query, schema: { type: string }, description: Busca por usuário, ação ou entidade }
       responses: { '200': { description: Eventos mais recentes } }
+  /audit/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém detalhes completos de um registro de auditoria
+      responses: { '200': { description: Registro completo }, '404': { description: Registro não encontrado } }
+  /customers:
+    get:
+      summary: Lista resumos de clientes para tabela e seleção
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: string, enum: ['', 'true', 'false'] } }
+      responses: { '200': { description: Clientes correspondentes aos filtros } }
+  /customers/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Obtém os dados completos do cliente selecionado
+      responses: { '200': { description: Dados do cliente }, '404': { description: Cliente não encontrado } }
 components:
   headers:
     ServerTime:
@@ -339,20 +380,37 @@ components:
         sku: { type: string, minLength: 1, maxLength: 80 }
         category: { type: string, example: Sandália }
         color: { type: [string, 'null'] }
+        variations: { type: array, items: { type: string, maxLength: 60 }, maxItems: 40, description: Opções de variação configuradas para o modelo }
         currentPrice: { type: number, minimum: 0 }
         components: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ComponentInput' } }
     Product:
       allOf:
         - { $ref: '#/components/schemas/ProductInput' }
         - type: object
-          required: [id, active, productionCost, minimumPrice, expectedProfit, currentProfit]
+          required: [id, active, variations, productionCost, minimumPrice, expectedProfit, currentProfit]
           properties:
             id: { type: integer }
             active: { type: boolean }
+            variations: { type: array, items: { type: string } }
             productionCost: { type: number }
             minimumPrice: { type: number }
             expectedProfit: { type: number }
             currentProfit: { type: number }
+    ProductList:
+      type: object
+      required: [id, name, sku, category, currentPrice, active, productionCost, minimumPrice, expectedProfit, currentProfit]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        sku: { type: string }
+        category: { type: string }
+        color: { type: [string, 'null'] }
+        currentPrice: { type: number }
+        active: { type: boolean }
+        productionCost: { type: number }
+        minimumPrice: { type: number }
+        expectedProfit: { type: number }
+        currentProfit: { type: number }
     ChannelInput:
       type: object
       required: [name, fixedFee, percentageFee]
@@ -374,9 +432,10 @@ components:
         color: { type: [string, 'null'], example: PRETO }
         orderDate: { type: string, format: date }
         dueDate: { type: [string, 'null'], format: date }
+        paymentDate: { type: [string, 'null'], format: date, description: Data em que o pagamento foi realizado }
         quantity: { type: number, exclusiveMinimum: 0 }
         unitPrice: { type: number, minimum: 0 }
-        paidAmount: { type: number, minimum: 0 }
+        paidAmount: { type: number, minimum: 0, description: Calculado automaticamente como o total quando paymentStatus é paid; para os demais status é zero }
         paymentStatus: { type: string, enum: [pending, partial, paid, refunded] }
         status: { type: string, enum: [pending, in_production, ready, delivered, completed, cancelled] }
         sizes:

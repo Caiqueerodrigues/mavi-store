@@ -35,6 +35,21 @@ const clean = (value: unknown) =>
       (status) => pdfStatusLabels[status] || status,
     );
 
+function parseOrderSizes(value: unknown): Array<{ size: string; quantity: number }> {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    .map((item) => ({ size: String(item.size ?? ""), quantity: Number(item.quantity) || 0 }));
+}
+
 const productionStatusLabels: Record<string, string> = {
   pending: "Pendente",
   in_production: "Em produção",
@@ -63,6 +78,12 @@ function wrap(text: string, font: PDFFont, size: number, width: number) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+function fittedFontSize(text: string, font: PDFFont, preferredSize: number, maxWidth: number) {
+  let size = preferredSize;
+  while (size > 7 && font.widthOfTextAtSize(text, size) > maxWidth) size -= 0.5;
+  return size;
 }
 
 export default defineEventHandler(async (event) => {
@@ -103,8 +124,8 @@ export default defineEventHandler(async (event) => {
     bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   let logo: Awaited<ReturnType<typeof pdf.embedPng>> | undefined;
   for (const path of [
-    join(process.cwd(), ".output/public/assets/logo-mavi.png"),
-    join(process.cwd(), "public/assets/logo-mavi.png"),
+    join(process.cwd(), ".output/public/assets/logo_sem_fundo.png"),
+    join(process.cwd(), "public/assets/logo_sem_fundo.png"),
   ]) {
     try {
       logo = await pdf.embedPng(await readFile(path));
@@ -117,6 +138,14 @@ export default defineEventHandler(async (event) => {
     charcoal = rgb(0.18, 0.18, 0.18),
     green = rgb(0.16, 0.61, 0.1),
     light = rgb(0.98, 0.94, 0.95);
+  const productionStatusStyles: Record<string, { label: string; background: ReturnType<typeof rgb>; foreground: ReturnType<typeof rgb> }> = {
+    pending: { label: "Pendente", background: rgb(1, 0.96, 0.86), foreground: rgb(0.58, 0.35, 0.05) },
+    in_production: { label: "Em produção", background: rgb(0.9, 0.94, 1), foreground: rgb(0.16, 0.34, 0.63) },
+    ready: { label: "Pronto", background: rgb(0.89, 0.96, 0.91), foreground: rgb(0.12, 0.48, 0.29) },
+    delivered: { label: "Entregue", background: rgb(0.87, 0.96, 0.94), foreground: rgb(0.08, 0.43, 0.39) },
+    completed: { label: "Concluído", background: rgb(0.92, 0.91, 0.98), foreground: rgb(0.38, 0.29, 0.58) },
+    cancelled: { label: "Cancelado", background: rgb(1, 0.91, 0.91), foreground: red },
+  };
   let page: PDFPage,
     y = 0;
   const newPage = () => {
@@ -131,24 +160,24 @@ export default defineEventHandler(async (event) => {
     });
     page.drawRectangle({ x: 0, y: 818, width: 595.28, height: 24, color: red });
     if (logo) {
-      const scaled = logo.scaleToFit(78, 54);
+      const scaled = logo.scaleToFit(64, 64);
       page.drawImage(logo, {
-        x: 42,
-        y: 744,
+        x: 38,
+        y: 748,
         width: scaled.width,
         height: scaled.height,
       });
     }
     page.drawText("RELATÓRIO DE PEDIDOS", {
-      x: 178,
-      y: 784,
+      x: 116,
+      y: 785,
       size: 17,
       font: bold,
       color: red,
     });
     page.drawText(`Gerado em ${formatBrasiliaDateTime(generatedAt)}`, {
-      x: 196,
-      y: 766,
+      x: 116,
+      y: 767,
       size: 8,
       font: regular,
       color: charcoal,
@@ -194,11 +223,9 @@ export default defineEventHandler(async (event) => {
 
   for (const row of orders) {
     const description = wrap(row.productDescription, bold, 10, 485),
-      sizes = Array.isArray(row.sizes) ? row.sizes : [],
-      sizeText = sizes
-        .map((item: any) => `${clean(item.size)}: ${Number(item.quantity)}`)
-        .join("    "),
-      sizeLines = sizeText ? wrap(sizeText, regular, 8.5, 485) : [],
+      sizes = parseOrderSizes(row.sizes),
+      gradeRows = Math.ceil(sizes.length / 2),
+      gradeHeight = sizes.length ? 29 + gradeRows * 14 : 0,
       customerName = clean(row.customerName),
       customerDisplay = row.customerNickname
         ? `${customerName} (${clean(row.customerNickname)})`
@@ -217,17 +244,18 @@ export default defineEventHandler(async (event) => {
         8.5,
         485,
       ),
+      paymentDateLines = wrap(
+        `Data do pagamento: ${date(row.paymentDate)}`,
+        regular,
+        8.5,
+        485,
+      ),
       notesLines = row.notes
         ? wrap(`Observações: ${row.notes}`, regular, 8, 485)
         : [];
     const height =
-      132 +
-      (description.length - 1) * 12 +
-      (customerLines.length - 1) * 11 +
-      (paymentLines.length - 1) * 11 +
-      sizeLines.length * 11 +
-      notesLines.length * 11 +
-      (row.withdrawalDate || row.withdrawnBy ? 14 : 0);
+      132 + customerLines.length * 11 + description.length * 12 +
+      paymentLines.length * 11 + paymentDateLines.length * 11 + gradeHeight + notesLines.length * 11;
     if (y - height < 42) newPage();
     page!.drawRectangle({
       x: 38,
@@ -239,27 +267,39 @@ export default defineEventHandler(async (event) => {
     });
     page!.drawRectangle({
       x: 38,
-      y: y - 25,
+      y: y - 29,
       width: 519,
-      height: 25,
+      height: 29,
       color: red,
     });
     page!.drawText(clean(row.orderType).toUpperCase(), {
       x: 48,
       y: y - 17,
-      size: 11,
+      size: fittedFontSize(clean(row.orderType).toUpperCase(), bold, 11, 100),
       font: bold,
       color: rgb(1, 1, 1),
     });
     page!.drawText(
       `#${clean(row.orderNumber)}  •  ${clean(row.customerName)}`,
-      { x: 155, y: y - 17, size: 10, font: bold, color: rgb(1, 1, 1) },
+      { x: 160, y: y - 19, size: 8.5, font: bold, color: rgb(1, 1, 1) },
     );
-    let innerY = y - 43;
-    page!.drawText(
-      `Pedido: ${date(row.orderDate)}    Entrega: ${date(row.dueDate)}    Status: ${clean(row.status)}`,
-      { x: 48, y: innerY, size: 8.5, font: regular, color: charcoal },
-    );
+    let innerY = y - 47;
+    const deliveryDetails = `Entrega: ${date(row.withdrawalDate)}${row.withdrawnBy ? `  •  Retirado por: ${clean(row.withdrawnBy)}` : ""}`;
+    const orderDates = `Pedido: ${date(row.orderDate)}    ${deliveryDetails}`;
+    page!.drawText(orderDates, {
+      x: 48, y: innerY, size: fittedFontSize(orderDates, regular, 8.5, 485),
+      font: regular, color: charcoal,
+    });
+    const statusStyle = productionStatusStyles[String(row.status)] || {
+      label: clean(row.status) || "NÃ£o informado",
+      background: rgb(0.95, 0.95, 0.95), foreground: charcoal,
+    };
+    const statusWidth = Math.min(150, bold.widthOfTextAtSize(statusStyle.label, 8) + 14);
+    page!.drawRectangle({ x: 545 - statusWidth, y: innerY - 4, width: statusWidth, height: 15, color: statusStyle.background });
+    page!.drawText(statusStyle.label, {
+      x: 545 - statusWidth + 7, y: innerY, size: fittedFontSize(statusStyle.label, bold, 8, statusWidth - 14),
+      font: bold, color: statusStyle.foreground,
+    });
     innerY -= 16;
     customerLines.forEach((line) => {
       page!.drawText(line, {
@@ -301,9 +341,9 @@ export default defineEventHandler(async (event) => {
           : red;
     page!.drawRectangle({
       x: 44,
-      y: innerY - paymentLines.length * 11 + 3,
+      y: innerY - (paymentLines.length + paymentDateLines.length) * 11 + 3,
       width: 507,
-      height: paymentLines.length * 11 + 7,
+      height: (paymentLines.length + paymentDateLines.length) * 11 + 7,
       color: row.paymentStatus === "paid"
         ? rgb(0.91, 0.96, 0.92)
         : row.paymentStatus === "partial"
@@ -322,22 +362,46 @@ export default defineEventHandler(async (event) => {
       });
       innerY -= 11;
     });
-    sizeLines.forEach((line) => {
+    paymentDateLines.forEach((line) => {
       page!.drawText(line, {
         x: 48,
         y: innerY,
         size: 8.5,
         font: regular,
-        color: charcoal,
+        color: paymentColor,
       });
       innerY -= 11;
     });
-    if (row.withdrawalDate || row.withdrawnBy)
-      page!.drawText(
-        `Retirada: ${date(row.withdrawalDate)}  •  Por: ${clean(row.withdrawnBy || "não informado")}`,
-        { x: 48, y: innerY, size: 8, font: regular, color: charcoal },
-      );
-    if (row.withdrawalDate || row.withdrawnBy) innerY -= 12;
+    if (sizes.length) {
+      const gridX = 48, gridWidth = 499, groupWidth = gridWidth / 2;
+      const gradeTotal = sizes.reduce((sum: number, size: any) => sum + Number(size.quantity || 0), 0);
+      const titleY = innerY - 7, gridTop = titleY - 5, headerHeight = 14, rowHeight = 14;
+      const gridHeight = headerHeight + gradeRows * rowHeight;
+      const subtleLine = rgb(0.82, 0.89, 0.84), gradeGreen = rgb(0.14, 0.45, 0.32);
+      page!.drawText("GRADE DE TAMANHOS", { x: gridX, y: titleY, size: 7, font: bold, color: gradeGreen });
+      const gradeTotalText = `${gradeTotal} pares`;
+      page!.drawText(gradeTotalText, { x: gridX + gridWidth - bold.widthOfTextAtSize(gradeTotalText, 7), y: titleY, size: 7, font: bold, color: gradeGreen });
+      page!.drawRectangle({ x: gridX, y: gridTop - headerHeight, width: gridWidth, height: headerHeight, color: rgb(0.91, 0.96, 0.92) });
+      page!.drawLine({ start: { x: gridX, y: gridTop }, end: { x: gridX + gridWidth, y: gridTop }, thickness: 0.45, color: subtleLine });
+      page!.drawLine({ start: { x: gridX, y: gridTop - gridHeight }, end: { x: gridX + gridWidth, y: gridTop - gridHeight }, thickness: 0.45, color: subtleLine });
+      page!.drawLine({ start: { x: gridX + groupWidth, y: gridTop }, end: { x: gridX + groupWidth, y: gridTop - gridHeight }, thickness: 0.45, color: subtleLine });
+      for (let group = 0; group < 2; group++) {
+        const gx = gridX + group * groupWidth;
+        page!.drawText("Tamanho", { x: gx + 8, y: gridTop - 10, size: 7, font: bold, color: charcoal });
+        page!.drawText("Qtd.", { x: gx + groupWidth - 31, y: gridTop - 10, size: 7, font: bold, color: charcoal });
+      }
+      sizes.forEach((size: any, index: number) => {
+        const group = Math.floor(index / gradeRows), rowIndex = index % gradeRows;
+        const rowTop = gridTop - headerHeight - rowIndex * rowHeight;
+        const gx = gridX + group * groupWidth;
+        if (rowIndex > 0) page!.drawLine({ start: { x: gx, y: rowTop }, end: { x: gx + groupWidth, y: rowTop }, thickness: 0.3, color: subtleLine });
+        page!.drawText(clean(size.size), { x: gx + 8, y: rowTop - 10, size: 8, font: regular, color: charcoal });
+        const quantity = String(size.quantity);
+        const quantityWidth = regular.widthOfTextAtSize(quantity, 8);
+        page!.drawText(quantity, { x: gx + groupWidth - 8 - quantityWidth, y: rowTop - 10, size: 8, font: regular, color: charcoal });
+      });
+      innerY = gridTop - gridHeight - 3;
+    }
     notesLines.forEach((line) => {
       page!.drawText(line, {
         x: 48,

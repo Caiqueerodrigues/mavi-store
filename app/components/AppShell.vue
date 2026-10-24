@@ -11,6 +11,28 @@ type User = {
   lastLoginAt?: string;
 };
 type SizeItem = { size: string; quantity: number };
+function normalizeOrderSizes(value: unknown): SizeItem[] {
+  let sizes = value;
+  if (typeof sizes === "string") {
+    try {
+      sizes = JSON.parse(sizes);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(sizes)) return [];
+  return sizes
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    .map((item) => ({
+      size: String(item.size ?? ""),
+      quantity: Number(item.quantity) || 0,
+    }));
+}
+function dateInputValue(value: unknown): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value.toISOString() : String(value);
+  return /^\d{4}-\d{2}-\d{2}/.exec(date)?.[0] || "";
+}
 type Customer = {
   id: number;
   name: string;
@@ -36,6 +58,7 @@ type Order = {
   color: string | null;
   orderDate: string;
   dueDate: string | null;
+  paymentDate: string | null;
   quantity: number;
   unitPrice: number;
   total: number;
@@ -47,6 +70,21 @@ type Order = {
   withdrawnBy: string | null;
   notes: string | null;
 };
+type OrderListItem = Pick<
+  Order,
+  | "id"
+  | "orderNumber"
+  | "customerName"
+  | "orderType"
+  | "productDescription"
+  | "orderDate"
+  | "quantity"
+  | "total"
+  | "paymentStatus"
+  | "status"
+>;
+type ProductListItem = Omit<Product, "components" | "variations">;
+type UserListItem = Omit<User, "mustChangePassword">;
 const ready = ref(false),
   user = ref<User | null>(null),
   serverTime = ref(""),
@@ -70,16 +108,18 @@ const ready = ref(false),
   notice = ref(""),
   noticeType = ref<"success" | "error">("success");
 const dashboard = ref<any>(null),
-  orders = ref<Order[]>([]),
+  orders = ref<OrderListItem[]>([]),
   customers = ref<Customer[]>([]),
   serviceTypes = ref<ServiceType[]>([]),
   orderServiceTypes = ref<ServiceType[]>([]),
-  products = ref<Product[]>([]),
+  products = ref<ProductListItem[]>([]),
   materials = ref<Material[]>([]),
   channels = ref<Channel[]>([]),
   settings = ref<any>(null),
-  users = ref<User[]>([]),
+  users = ref<UserListItem[]>([]),
   auditData = ref<any>({ items: [], total: 0 });
+const auditDetailCache = reactive<Record<number, unknown>>({}),
+  auditDetailLoading = reactive<Record<number, boolean>>({});
 const tablePages = reactive<Record<string, { offset: number; total: number; loading: boolean }>>({});
 const tablePageSize = 50;
 const filterDebounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
@@ -428,6 +468,17 @@ async function api<T = any>(
     throw error;
   }
 }
+async function fetchListItemDetail<T>(resource: string, id: number): Promise<T | null> {
+  try {
+    return await api<T>(`/api/${resource}/${id}`);
+  } catch (error: any) {
+    toast(
+      error?.data?.message || error?.data?.statusMessage || "Não foi possível carregar os dados completos.",
+      "error",
+    );
+    return null;
+  }
+}
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function toast(message: string, type: "success" | "error" = "success") {
   if (toastTimer) clearTimeout(toastTimer);
@@ -594,7 +645,7 @@ async function loadProducts() {
   const query = new URLSearchParams({ active: productStatus.value });
   if (productCategory.value) query.set("category", productCategory.value);
   const requestId = ++productRequestId;
-  const result = await api<Product[]>(`/api/products?${query.toString()}`);
+  const result = await api<ProductListItem[]>(`/api/products?${query.toString()}`);
   if (requestId === productRequestId) products.value = result;
 }
 async function loadDashboard() {
@@ -773,6 +824,7 @@ const orderModal = ref(false),
     color: "",
     orderDate: serverTime.value.slice(0, 10),
     dueDate: null,
+    paymentDate: null,
     quantity: 1,
     unitPrice: 0,
     paidAmount: 0,
@@ -783,8 +835,25 @@ const orderModal = ref(false),
     withdrawnBy: "",
     notes: "",
   });
+function orderTotalAmount(quantity = orderForm.quantity, unitPrice = orderForm.unitPrice) {
+  return Math.round((Number(quantity || 0) * Number(unitPrice || 0) + Number.EPSILON) * 100) / 100;
+}
+function syncPaidAmount() {
+  if (orderForm.paymentStatus === "paid") {
+    orderForm.paidAmount = orderTotalAmount();
+  } else {
+    orderForm.paidAmount = 0;
+  }
+}
+watch(
+  () => [orderForm.paymentStatus, orderForm.quantity, orderForm.unitPrice],
+  syncPaidAmount,
+);
 const gradeQuantity = computed(() =>
-    orderForm.sizes.reduce((sum: number, item: SizeItem) => sum + Number(item.quantity || 0), 0),
+    (Array.isArray(orderForm.sizes) ? orderForm.sizes : []).reduce(
+      (sum: number, item: SizeItem) => sum + Number(item.quantity || 0),
+      0,
+    ),
   ),
   gradeMatchesQuantity = computed(
     () => Math.abs(gradeQuantity.value - Number(orderForm.quantity || 0)) < 0.0001,
@@ -798,7 +867,7 @@ const gradeQuantity = computed(() =>
   dashboardStatusMax = computed(() =>
     Math.max(1, ...(dashboard.value?.statuses || []).map((item: any) => Number(item.total))),
   );
-async function editOrder(item?: Order) {
+async function editOrder(item?: OrderListItem) {
   try {
     orderServiceTypes.value = await api<ServiceType[]>(
       "/api/service-types?active=true",
@@ -807,11 +876,17 @@ async function editOrder(item?: Order) {
     toast(error?.data?.message || error?.data?.statusMessage || "Não foi possível carregar os tipos de serviço ativos.", "error");
     return;
   }
+  let orderDetails: Order | undefined;
+  if (item) {
+    const details = await fetchListItemDetail<Order>("orders", item.id);
+    if (!details) return;
+    orderDetails = details;
+  }
   const firstCustomer = activeCustomers.value[0];
   Object.assign(
     orderForm,
-    item
-      ? JSON.parse(JSON.stringify(item))
+    orderDetails
+      ? JSON.parse(JSON.stringify(orderDetails))
       : {
           id: 0,
           orderNumber: "",
@@ -824,6 +899,7 @@ async function editOrder(item?: Order) {
           color: "",
           orderDate: serverTime.value.slice(0, 10),
           dueDate: null,
+          paymentDate: null,
           quantity: 1,
           unitPrice: 0,
           paidAmount: 0,
@@ -835,7 +911,12 @@ async function editOrder(item?: Order) {
           notes: "",
         },
   );
-  if (!item) orderForm.sizes = [];
+  orderForm.sizes = normalizeOrderSizes(orderForm.sizes);
+  orderForm.orderDate = dateInputValue(orderForm.orderDate) || serverTime.value.slice(0, 10);
+  orderForm.dueDate = dateInputValue(orderForm.dueDate) || null;
+  orderForm.paymentDate = dateInputValue(orderForm.paymentDate) || null;
+  orderForm.withdrawalDate = dateInputValue(orderForm.withdrawalDate) || null;
+  syncPaidAmount();
   orderModal.value = true;
 }
 function selectServiceType() {
@@ -892,7 +973,7 @@ async function applyBulkAction() {
     busy.value = false;
   }
 }
-async function cloneOrder(item: Order) {
+async function cloneOrder(item: OrderListItem) {
   if (!(await confirmInModal(`Deseja criar uma cópia do pedido ${item.orderNumber} para ${item.customerName}?`, "Clonar pedido", "Clonar pedido"))) return;
   busy.value = true;
   try {
@@ -907,13 +988,13 @@ async function cloneOrder(item: Order) {
     busy.value = false;
   }
 }
-async function deleteOrder(item: Order) {
+async function deleteOrder(item: OrderListItem) {
   if (!(await confirmInModal(`Deseja excluir o pedido ${item.orderNumber} (ID ${item.id}) do cliente ${item.customerName}? O histórico será preservado.`, "Excluir pedido", "Excluir pedido"))) return;
   await api(`/api/orders/${item.id}`, { method: "DELETE" });
   await Promise.all([loadOrders(), loadDashboard()]);
   toast("Pedido removido. O histórico foi preservado.");
 }
-async function pdf(item?: Order, selectedIds: number[] = []) {
+async function pdf(item?: Pick<OrderListItem, "id">, selectedIds: number[] = []) {
   const ids = selectedIds.length ? selectedIds : item ? [item.id] : [];
   if (ids.length > 500) {
     toast("Selecione no máximo 500 pedidos por PDF.", "error");
@@ -922,45 +1003,77 @@ async function pdf(item?: Order, selectedIds: number[] = []) {
   const url = ids.length
     ? `/api/orders/report.pdf?ids=${ids.join(",")}`
     : "/api/orders/report.pdf";
-  const pdfWindow = window.open("about:blank", "_blank");
-  if (!pdfWindow) {
-    toast("Permita a abertura de uma nova aba para gerar o PDF.", "error");
-    return;
-  }
-  pdfWindow.opener = null;
-  let response: Response;
+  pdfFile.value = null;
+  pdfModal.value = true;
+  pdfLoading.value = true;
+  const loadingStartedAt = Date.now();
   try {
-    response = await fetch(url, { credentials: "include" });
-  } catch {
-    pdfWindow.close();
-    toast("Não foi possível gerar o PDF.", "error");
-    return;
-  }
-  if (response.status === 401 || response.status === 403) {
-    try {
-      await $fetch("/api/auth/refresh", {
-        method: "POST",
-        headers: { "x-csrf-token": csrf() },
-        credentials: "include",
-      });
+    let response = await fetch(url, { credentials: "include" });
+    if (response.status === 401 || response.status === 403) {
+      try {
+        await $fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "x-csrf-token": csrf() },
+          credentials: "include",
+        });
+      } catch {
+        closePdfModal();
+        forceLogin();
+        return;
+      }
       response = await fetch(url, { credentials: "include" });
-    } catch {
-      pdfWindow.close();
-      forceLogin();
+    }
+    if (!response.ok) {
+      closePdfModal();
+      if (response.status === 401 || response.status === 403) forceLogin();
+      else toast("Não foi possível gerar o PDF.", "error");
       return;
     }
-  }
-  if (!response.ok) {
-    pdfWindow.close();
-    if (response.status === 401 || response.status === 403) forceLogin();
+    const blob = await response.blob();
+    pdfFileName.value = `relatorio-pedidos-${serverTime.value.slice(0, 10) || "mavi"}.pdf`;
+    pdfPreviewUrl.value = URL.createObjectURL(blob);
+    pdfFile.value = new File([blob], pdfFileName.value, { type: "application/pdf" });
+    void loadAudit();
+  } catch (error: any) {
+    closePdfModal();
+    if (error?.status === 401 || error?.status === 403 || error?.statusCode === 401 || error?.statusCode === 403) forceLogin();
     else toast("Não foi possível gerar o PDF.", "error");
+  } finally {
+    const remainingLoadingTime = 900 - (Date.now() - loadingStartedAt);
+    if (remainingLoadingTime > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, remainingLoadingTime));
+    }
+    pdfLoading.value = false;
+  }
+}
+const pdfModal = ref(false),
+  pdfLoading = ref(false),
+  pdfPreviewUrl = ref(""),
+  pdfFileName = ref("relatorio-pedidos.pdf"),
+  pdfFile = ref<File | null>(null);
+function closePdfModal() {
+  pdfModal.value = false;
+  if (pdfPreviewUrl.value) URL.revokeObjectURL(pdfPreviewUrl.value);
+  pdfPreviewUrl.value = "";
+  pdfFile.value = null;
+}
+async function sharePdf() {
+  if (!pdfFile.value) return;
+  const shareNavigator = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+  };
+  if (!shareNavigator.share || !shareNavigator.canShare?.({ files: [pdfFile.value] })) {
+    toast("Este navegador não permite compartilhar o PDF. Tente em outro dispositivo.", "error");
     return;
   }
-  const blob = await response.blob(),
-    href = URL.createObjectURL(blob);
-  pdfWindow.location.href = href;
-  setTimeout(() => URL.revokeObjectURL(href), 60000);
-  await loadAudit();
+  try {
+    await shareNavigator.share({
+      files: [pdfFile.value],
+      title: "Relatório de serviços terceirizados",
+    });
+  } catch (error: any) {
+    if (error?.name !== "AbortError") toast("Não foi possível compartilhar o PDF.", "error");
+  }
 }
 const userModal = ref(false),
   userForm = reactive<any>({
@@ -971,11 +1084,13 @@ const userModal = ref(false),
     active: true,
     password: "",
   });
-function editUser(item?: User) {
+async function editUser(item?: UserListItem) {
+  const details = item ? await fetchListItemDetail<User>("users", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     userForm,
-    item
-      ? { ...item, password: "" }
+    details
+      ? { ...details, password: "" }
       : {
           id: 0,
           name: "",
@@ -1074,6 +1189,21 @@ function auditDetails(details: unknown) {
   if (!details || (typeof details === "object" && !Object.keys(details).length)) return "—";
   return JSON.stringify(details, null, 2);
 }
+function hasAuditDetails(id: number) {
+  return Object.prototype.hasOwnProperty.call(auditDetailCache, id);
+}
+async function loadAuditDetails(log: { id: number }) {
+  if (hasAuditDetails(log.id) || auditDetailLoading[log.id]) return;
+  auditDetailLoading[log.id] = true;
+  try {
+    const detail = await api<{ details?: unknown }>(`/api/audit/${log.id}`);
+    auditDetailCache[log.id] = detail.details ?? {};
+  } catch (error: any) {
+    toast(error?.data?.message || "Não foi possível carregar os detalhes da auditoria.", "error");
+  } finally {
+    delete auditDetailLoading[log.id];
+  }
+}
 async function copyAuditDetails(details: unknown) {
   try {
     await navigator.clipboard.writeText(JSON.stringify(details ?? {}, null, 2));
@@ -1102,11 +1232,13 @@ const materialModal = ref(false),
   materialUsageCostPreview = computed(
     () => materialUnitCostPreview.value * Number(materialUsageQuantity.value || 0),
   );
-function editMaterial(item?: Material) {
+async function editMaterial(item?: Material) {
+  const details = item ? await fetchListItemDetail<Material>("materials", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     materialForm,
-    item
-      ? { ...item, supplier: item.supplier || "" }
+    details
+      ? { ...details, supplier: details.supplier || "" }
       : {
           id: 0,
           name: "",
@@ -1141,6 +1273,7 @@ const productModal = ref(false),
     sku: "",
     category: "",
     color: "",
+    variations: [],
     currentPrice: 0,
     components: [],
   });
@@ -1158,18 +1291,21 @@ function selectProductMaterial(component: any, materialId: number) {
   component.quantity = material?.unit?.toUpperCase() === "PAR" ? 2 : 1;
   component.wastePercent = 0;
 }
-function editProduct(item?: Product) {
+async function editProduct(item?: ProductListItem) {
+  const details = item ? await fetchListItemDetail<Product>("products", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     productForm,
-    item
+    details
       ? {
-          id: item.id,
-          name: item.name,
-          sku: item.sku || "",
-          category: item.category,
-          color: item.color || "",
-          currentPrice: item.currentPrice,
-          components: item.components.map((component) => ({
+          id: details.id,
+          name: details.name,
+          sku: details.sku || "",
+          category: details.category,
+          color: details.color || "",
+          variations: details.variations || [],
+          currentPrice: details.currentPrice,
+          components: details.components.map((component) => ({
             materialId: component.materialId,
             quantity: component.quantity,
             wastePercent: component.wastePercent * 100,
@@ -1181,6 +1317,7 @@ function editProduct(item?: Product) {
           sku: "",
           category: "",
           color: "",
+          variations: [],
           currentPrice: 0,
           components: [{ materialId: null, quantity: 1, wastePercent: 0 }],
         },
@@ -1210,7 +1347,7 @@ async function saveProduct() {
     busy.value = false;
   }
 }
-async function toggleProductActive(item: Product) {
+async function toggleProductActive(item: ProductListItem) {
   const active = !item.active;
   const confirmed = await confirmInModal(
     active
@@ -1246,11 +1383,13 @@ const selectableChannels = computed(() =>
     (channel) => channel.active || channel.id === settings.value?.defaultChannelId,
   ),
 );
-function editChannel(item?: Channel) {
+async function editChannel(item?: Channel) {
+  const details = item ? await fetchListItemDetail<Channel>("channels", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     channelForm,
-    item
-      ? { ...item, percentageFee: item.percentageFee * 100 }
+    details
+      ? { ...details, percentageFee: details.percentageFee * 100 }
       : { id: 0, name: "", percentageFee: 0, fixedFee: 0, active: true },
   );
   channelModal.value = true;
@@ -1286,11 +1425,13 @@ const customerModal = ref(false),
     nickname: "",
     active: true,
   });
-function editCustomer(item?: Customer) {
+async function editCustomer(item?: Customer) {
+  const details = item ? await fetchListItemDetail<Customer>("customers", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     customerForm,
-    item
-      ? { ...item, phone: phoneMask(item.phone), nickname: item.nickname || "" }
+    details
+      ? { ...details, phone: phoneMask(details.phone), nickname: details.nickname || "" }
       : { id: 0, name: "", phone: "", nickname: "", active: true },
   );
   customerModal.value = true;
@@ -1318,10 +1459,12 @@ const serviceTypeModal = ref(false),
     basePrice: 0,
     active: true,
   });
-function editServiceType(item?: ServiceType) {
+async function editServiceType(item?: ServiceType) {
+  const details = item ? await fetchListItemDetail<ServiceType>("service-types", item.id) : null;
+  if (item && !details) return;
   Object.assign(
     serviceTypeForm,
-    item ? { ...item } : { id: 0, name: "", basePrice: 0, active: true },
+    details ? { ...details } : { id: 0, name: "", basePrice: 0, active: true },
   );
   serviceTypeModal.value = true;
 }
@@ -1348,113 +1491,34 @@ async function saveServiceType() {
 }
 </script>
 <template>
-  <div v-if="!ready" class="splash" role="status" aria-label="Carregando o sistema">
-    <div class="splash-skeleton">
-      <div class="skeleton-center-brand"><img src="/assets/logo-mavi.png" alt="Mavi Store" /></div>
-      <aside class="skeleton-sidebar">
-        <div class="skeleton-brand"><i class="skeleton-block brand-mark"></i><i class="skeleton-block brand-name"></i></div>
-        <i v-for="item in 6" :key="item" class="skeleton-block skeleton-nav"></i>
-      </aside>
-      <main class="skeleton-main">
-        <div class="skeleton-topbar"><i class="skeleton-block topbar-title"></i><i class="skeleton-block topbar-user"></i></div>
-        <div class="skeleton-heading"><i class="skeleton-block heading-title"></i><i class="skeleton-block heading-action"></i></div>
-        <div class="skeleton-stats"><div v-for="item in 4" :key="item" class="skeleton-stat"><i class="skeleton-block stat-label"></i><i class="skeleton-block stat-value"></i><i class="skeleton-block stat-foot"></i></div></div>
-        <div class="skeleton-panels">
-          <div class="skeleton-panel"><i class="skeleton-block panel-title"></i><i class="skeleton-block chart-bar chart-bar-one"></i><i class="skeleton-block chart-bar chart-bar-two"></i><i class="skeleton-block chart-bar chart-bar-three"></i><i class="skeleton-block panel-foot"></i></div>
-          <div class="skeleton-panel"><i class="skeleton-block panel-title"></i><i v-for="item in 4" :key="item" class="skeleton-block panel-row"><i class="skeleton-block row-dot"></i><i class="skeleton-block row-line"></i><i class="skeleton-block row-value"></i></i></div>
-        </div>
-      </main>
-    </div>
-    <span class="sr-only">Preparando seu ambiente…</span>
-  </div>
-  <main v-else-if="!user" class="login-page">
-    <section class="login-brand">
-      <img src="/assets/logo-mavi.png" alt="Mavi Store" />
-      <div>
-        <span class="eyebrow light">Gestão integrada</span>
-        <h1>Produção organizada.<br />Margem protegida.</h1>
-        <p>Custos, pedidos, relatórios e rastreabilidade em um único lugar.</p>
-      </div>
-    </section>
-    <form class="login-card" @submit.prevent="login">
-      <span class="eyebrow">Acesso seguro</span>
-      <h2>Bem-vindo de volta</h2>
-      <p>Use as credenciais fornecidas pelo administrador.</p>
-      <label
-        >E-mail<input
-          v-model="loginForm.email"
-          type="email"
-          autocomplete="username"
-          required /></label
-      ><label
-        >Senha<span class="password-field"
-          ><input
-            v-model="loginForm.password"
-            :type="passwordVisible.login ? 'text' : 'password'"
-            autocomplete="current-password"
-            required /><button
-            type="button"
-            :aria-label="
-              passwordVisible.login ? 'Ocultar senha' : 'Mostrar senha'
-            "
-            @click="passwordVisible.login = !passwordVisible.login"
-          ></button></span></label
-      ><label class="remember-login"
-        ><input v-model="rememberLogin" type="checkbox" />Lembrar de mim neste
-        dispositivo</label
-      >
-      <div v-if="loginError" class="form-error">{{ loginError }}</div>
-      <button class="button" :disabled="busy">
-        {{ busy ? "Entrando…" : "Entrar no sistema" }}
-      </button>
-    </form>
-  </main>
+  <AppLoadingScreen v-if="!ready" />
+  <LoginScreen
+    v-else-if="!user"
+    :form="loginForm"
+    :password-visible="passwordVisible.login"
+    :remember-login="rememberLogin"
+    :login-error="loginError"
+    :busy="busy"
+    @login="login"
+    @toggle-password="passwordVisible.login = !passwordVisible.login"
+    @update-remember-login="rememberLogin = $event"
+  />
   <div v-else class="shell">
-    <aside :class="['sidebar', { open: menuOpen }]">
-      <div class="brand">
-        <img class="brand-logo" src="/assets/logo-mavi.png" alt="Mavi" />
-        <div><strong>Mavi</strong><small>gestão & produção</small></div>
-      </div>
-      <nav>
-        <button
-          v-for="item in nav"
-          :key="item.id"
-          :class="{ active: tab === item.id }"
-          @click="go(item.id)"
-        >
-          <Icon :name="item.icon" /><span>{{ item.label }}</span>
-        </button>
-      </nav>
-      <div class="sidebar-note">
-        <Icon name="lucide:shield-check" />
-        <div>
-          <strong>{{ roleLabels[user.role] }}</strong
-          ><span>{{ user.name }}<br />{{ user.email }}</span>
-        </div>
-      </div>
-    </aside>
+    <AppSidebar
+      :items="nav"
+      :selected="tab"
+      :menu-open="menuOpen"
+      :role-labels="roleLabels"
+      :user="user"
+      @select="go"
+    />
     <main>
-      <header class="topbar">
-        <button class="menu" @click="menuOpen = !menuOpen">
-          <Icon name="lucide:menu" />
-        </button>
-        <div>
-          <span class="eyebrow">Mavi Store</span>
-          <h1>{{ nav.find((i) => i.id === tab)?.label }}</h1>
-        </div>
-        <div class="top-actions">
-          <span class="status"><i />Sessão protegida</span
-          ><button
-            class="icon-button"
-            title="Editar perfil"
-            @click="editProfile"
-          >
-            <Icon name="lucide:user-round-cog" /></button
-          ><button class="icon-button" title="Sair" @click="logout">
-            <Icon name="lucide:log-out" />
-          </button>
-        </div>
-      </header>
+      <AppTopbar
+        :title="nav.find((item) => item.id === tab)?.label || ''"
+        @toggle-menu="menuOpen = !menuOpen"
+        @edit-profile="editProfile"
+        @logout="logout"
+      />
       <section v-if="tab === 'dashboard'" class="content">
         <div class="hero">
           <div>
@@ -2202,7 +2266,7 @@ async function saveServiceType() {
                 <th><button class="sort-button" @click="sortTable('audit', 'action')">Ação<Icon :name="sortIcon(tableFilters.audit, 'action')" /></button></th>
                 <th><button class="sort-button" @click="sortTable('audit', 'entity')">Entidade<Icon :name="sortIcon(tableFilters.audit, 'entity')" /></button></th>
                 <th>Detalhes</th>
-                <th><button class="sort-button" @click="sortTable('audit', 'ipAddress')">IP<Icon :name="sortIcon(tableFilters.audit, 'ipAddress')" /></button></th>
+                <th class="audit-ip-column"><button class="sort-button" @click="sortTable('audit', 'ipAddress')">IP<Icon :name="sortIcon(tableFilters.audit, 'ipAddress')" /></button></th>
               </tr>
             </thead>
             <tbody>
@@ -2218,8 +2282,8 @@ async function saveServiceType() {
                   {{ log.entity }}
                   <small v-if="log.entityId">#{{ log.entityId }}</small>
                 </td>
-                <td class="audit-detail-cell"><pre class="audit-details">{{ auditDetails(log.details) }}</pre><button type="button" class="tiny-button" title="Copiar detalhes" aria-label="Copiar detalhes" @click="copyAuditDetails(log.details)"><Icon name="lucide:copy" /></button></td>
-                <td>{{ log.ipAddress || "—" }}</td>
+                <td class="audit-detail-cell"><button v-if="!hasAuditDetails(log.id)" type="button" class="text-button" :disabled="auditDetailLoading[log.id]" @click="loadAuditDetails(log)">{{ auditDetailLoading[log.id] ? "Carregando…" : "Ver detalhes" }}</button><template v-else><pre class="audit-details">{{ auditDetails(auditDetailCache[log.id]) }}</pre><button type="button" class="tiny-button" title="Copiar detalhes" aria-label="Copiar detalhes" @click="copyAuditDetails(auditDetailCache[log.id])"><Icon name="lucide:copy" /></button></template></td>
+                <td class="audit-ip-column">{{ log.ipAddress || "—" }}</td>
               </tr>
             </tbody>
           </table>
@@ -2236,7 +2300,8 @@ async function saveServiceType() {
         userModal ||
         materialModal ||
         profileModal ||
-        changeModal
+        changeModal ||
+        pdfModal
       "
       class="modal-backdrop"
     >
@@ -2331,7 +2396,7 @@ async function saveServiceType() {
               :value="money(orderForm.paidAmount)"
               type="text"
               inputmode="numeric"
-              @input="currencyInput($event, orderForm, 'paidAmount')"
+              disabled
           /></label
           ><label
             >Valor total<input
@@ -2340,18 +2405,29 @@ async function saveServiceType() {
               disabled
           /></label>
         </div>
-        <label
-          >Status do pagamento<select v-model="orderForm.paymentStatus">
-            <option
-              v-for="(label, key) in paymentStatusLabels"
-              :key="key"
-              :value="key"
-            >
-              {{ label }}
-            </option>
-          </select></label
-        >
-        <div class="components-head">
+        <div class="two-cols">
+          <label
+            >Status do pagamento<select v-model="orderForm.paymentStatus">
+              <option
+                v-for="(label, key) in paymentStatusLabels"
+                :key="key"
+                :value="key"
+              >
+                {{ label }}
+              </option>
+            </select></label
+          >
+          <label
+            >Data do pagamento<input
+              v-model="orderForm.paymentDate"
+              type="date"
+              :max="serverTime.slice(0, 10)"
+              :required="orderForm.paymentStatus === 'paid'"
+              @click="openDatePicker" />
+            <small v-if="orderForm.paymentStatus === 'paid'">Obrigatória para pagamento pago.</small>
+          </label>
+        </div>
+        <div class="components-head order-grade-head">
           <div>
             <span class="eyebrow">Grade</span>
             <h3>Tamanhos e quantidades</h3>
@@ -2615,6 +2691,7 @@ async function saveServiceType() {
           <label>Categoria<input v-model="productForm.category" required maxlength="60" list="product-categories" /><datalist id="product-categories"><option v-for="category in productCategories" :key="category" :value="category" /></datalist></label>
           <label>Cor<input v-model="productForm.color" maxlength="120" /></label>
         </div>
+        <label>Variações<TagMultiSelect v-model="productForm.variations" placeholder="Digite uma variação e pressione Enter" /></label>
         <label>Preço atual<input :value="money(productForm.currentPrice)" type="text" inputmode="numeric" @input="currencyInput($event, productForm, 'currentPrice')" /></label>
         <div class="components-head"><div><span class="eyebrow">Composição</span><h3>Insumos do produto</h3></div><button type="button" class="button secondary" @click="addProductComponent"><Icon name="lucide:plus" />Adicionar insumo</button></div>
         <p class="components-help">A quantidade usada inicia em 2 para insumos em PAR e em 1 para as demais unidades.</p>
@@ -2738,6 +2815,15 @@ async function saveServiceType() {
         <label class="check"><input v-model="channelForm.active" type="checkbox" />Canal ativo</label>
         <div class="modal-actions"><button type="button" class="button ghost" @click="channelModal = false">Cancelar</button><button class="button" :disabled="busy">Salvar canal</button></div>
       </form>
+      <PdfPreviewContent
+        v-else-if="pdfModal"
+        :loading="pdfLoading"
+        :preview-url="pdfPreviewUrl"
+        :file="pdfFile"
+        :file-name="pdfFileName"
+        @dismiss="closePdfModal"
+        @share="sharePdf"
+      />
       <form v-else class="modal secure-modal" @submit.prevent="changePassword">
         <img src="/assets/logo-mavi.png" alt="Mavi" /><span
           class="eyebrow first-access-label"
@@ -2821,3 +2907,8 @@ async function saveServiceType() {
     />
   </div>
 </template>
+
+<style scoped>
+/* Component-specific styles live with their components. */
+</style>
+

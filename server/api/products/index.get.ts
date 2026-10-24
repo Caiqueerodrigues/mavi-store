@@ -10,5 +10,5 @@ export default defineEventHandler((event) => {
   if (category !== undefined && (!category || category.length > 60)) {
     throw createApiError({ statusCode: 400, message: 'Filtro de categoria invÃ¡lido' })
   }
-  return listProducts(undefined, active, category)
+  return listProducts(undefined, active, category, false)
 })

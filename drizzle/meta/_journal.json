@@ -71,6 +71,13 @@
       "when": 1792800000000,
       "tag": "0015_order_completed_status",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792803600000,
+      "tag": "0016_product_variations",
+      "breakpoints": true
     }
   ]
 }

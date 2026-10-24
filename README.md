@@ -11,7 +11,7 @@ NUXT_DATABASE_URL=postgres://usuario_app:senha@servidor:5432/calcados?sslmode=re
 NUXT_DATABASE_ADMIN_URL=postgres://usuario_admin:senha@servidor:5432/postgres?sslmode=require
 APP_ORIGIN=https://mavi.seu-dominio.com.br
 COOKIE_SECURE=true
-TRUST_PROXY=false
+TRUST_PROXY=true
 ```
 
 `NUXT_DATABASE_ADMIN_URL` deve apontar para um banco que já exista no mesmo servidor, normalmente `postgres`, usando uma role com permissão `CREATEDB`. `NUXT_DATABASE_URL` aponta para o banco exclusivo da aplicação.
