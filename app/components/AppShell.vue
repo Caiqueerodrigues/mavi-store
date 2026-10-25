@@ -10,7 +10,7 @@ type User = {
   mustChangePassword: boolean;
   lastLoginAt?: string;
 };
-type SizeItem = { size: string; quantity: number };
+type SizeItem = { size: string; quantity: number; color: string };
 function normalizeOrderSizes(value: unknown): SizeItem[] {
   let sizes = value;
   if (typeof sizes === "string") {
@@ -26,6 +26,7 @@ function normalizeOrderSizes(value: unknown): SizeItem[] {
     .map((item) => ({
       size: String(item.size ?? ""),
       quantity: Number(item.quantity) || 0,
+      color: String(item.color ?? ""),
     }));
 }
 function dateInputValue(value: unknown): string {
@@ -415,19 +416,20 @@ function syncServerTime(headers: Headers) {
   const value = headers.get("x-server-time");
   if (value) {
     serverTime.value = value;
-    const today = value.slice(0, 10);
-    if (!dateFilterDefaultsInitialized) {
-      const [year, month, day] = today.split("-").map(Number);
-      const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
-        .toISOString()
-        .slice(0, 10);
-      dashboardFilters.from = yesterday;
-      dashboardFilters.to = today;
-      orderFilters.from = yesterday;
-      orderFilters.to = today;
-      dateFilterDefaultsInitialized = true;
-    }
+    initializeDateFilterDefaults(value.slice(0, 10));
   }
+}
+function initializeDateFilterDefaults(today: string) {
+  if (dateFilterDefaultsInitialized) return;
+  const [year, month, day] = today.split("-").map(Number);
+  const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
+    .toISOString()
+    .slice(0, 10);
+  dashboardFilters.from = `${today.slice(0, 7)}-01`;
+  dashboardFilters.to = today;
+  orderFilters.from = yesterday;
+  orderFilters.to = today;
+  dateFilterDefaultsInitialized = true;
 }
 function openDatePicker(event: Event) {
   (event.currentTarget as HTMLInputElement).showPicker?.();
@@ -657,6 +659,11 @@ async function loadProducts() {
   if (requestId === productRequestId) products.value = result;
 }
 async function loadDashboard() {
+  if (!dateFilterDefaultsInitialized) {
+    const now = new Date();
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    initializeDateFilterDefaults(serverTime.value.slice(0, 10) || localToday);
+  }
   const requestId = ++dashboardRequestId;
   const result = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
   if (requestId === dashboardRequestId) dashboard.value = result;
@@ -941,7 +948,7 @@ function selectServiceType() {
   }
 }
 function addSize() {
-  orderForm.sizes.push({ size: "", quantity: 1 });
+  orderForm.sizes.push({ size: "", quantity: 1, color: "" });
 }
 async function saveOrder() {
   busy.value = true;
@@ -1044,7 +1051,11 @@ async function pdf(item?: Pick<OrderListItem, "id">, selectedIds: number[] = [])
     const blob = await response.blob();
     pdfFileName.value = `relatorio-pedidos-${serverTime.value.slice(0, 10) || "mavi"}.pdf`;
     pdfPreviewUrl.value = URL.createObjectURL(blob);
-    pdfFile.value = new File([blob], pdfFileName.value, { type: "application/pdf" });
+    try {
+      pdfFile.value = new File([blob], pdfFileName.value, { type: "application/pdf" });
+    } catch {
+      pdfFile.value = null;
+    }
     void loadAudit();
   } catch (error: any) {
     closePdfModal();
@@ -1531,7 +1542,7 @@ async function saveServiceType() {
         @edit-profile="editProfile"
         @logout="logout"
       />
-      <section v-if="tab === 'dashboard'" class="content">
+      <section v-if="tab === 'dashboard'" class="content dashboard-page">
         <div class="hero">
           <div>
             <span class="eyebrow light">Resumo operacional</span>
@@ -2442,7 +2453,7 @@ async function saveServiceType() {
         <div class="components-head order-grade-head">
           <div>
             <span class="eyebrow">Grade</span>
-            <h3>Tamanhos e quantidades</h3>
+            <h3>Tamanhos, cores e quantidades</h3>
           </div>
           <button type="button" class="text-button" @click="addSize">
             <Icon name="lucide:plus" />Adicionar
@@ -2455,7 +2466,7 @@ async function saveServiceType() {
               type="number"
               min="1"
               placeholder="Qtd."
-            /><button
+            /><input v-model="s.color" maxlength="120" placeholder="Cor (opcional)" /><button
               type="button"
               class="tiny-button danger-text"
               @click="orderForm.sizes.splice(i, 1)"

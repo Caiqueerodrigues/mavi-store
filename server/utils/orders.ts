@@ -14,7 +14,7 @@ const orderBaseSchema = z.object({
   quantity: z.coerce.number().positive(), unitPrice: z.coerce.number().nonnegative(), paidAmount: z.coerce.number().nonnegative().default(0),
   paymentStatus: z.enum(['pending','partial','paid','refunded']).default('pending'),
   status: z.enum(['pending','in_production','ready','delivered','completed','cancelled']).default('pending'),
-  sizes: z.array(z.object({ size: z.string().trim().min(1).max(20), quantity: z.coerce.number().positive() })).default([]),
+  sizes: z.array(z.object({ size: z.string().trim().min(1).max(20), color: z.string().trim().max(120).optional().default(''), quantity: z.coerce.number().positive() })).default([]),
   withdrawalDate: z.string().date().nullable().optional(), withdrawnBy: z.string().trim().max(160).nullable().optional(), notes: z.string().max(2000).nullable().optional()
 })
 

@@ -35,7 +35,7 @@ const clean = (value: unknown) =>
       (status) => pdfStatusLabels[status] || status,
     );
 
-function parseOrderSizes(value: unknown): Array<{ size: string; quantity: number }> {
+function parseOrderSizes(value: unknown): Array<{ size: string; color: string; quantity: number }> {
   let parsed = value;
   if (typeof parsed === "string") {
     try {
@@ -47,7 +47,7 @@ function parseOrderSizes(value: unknown): Array<{ size: string; quantity: number
   if (!Array.isArray(parsed)) return [];
   return parsed
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-    .map((item) => ({ size: String(item.size ?? ""), quantity: Number(item.quantity) || 0 }));
+    .map((item) => ({ size: String(item.size ?? ""), color: String(item.color ?? ""), quantity: Number(item.quantity) || 0 }));
 }
 
 const productionStatusLabels: Record<string, string> = {
@@ -70,6 +70,20 @@ function wrap(text: string, font: PDFFont, size: number, width: number) {
     lines: string[] = [];
   let line = "";
   for (const word of words) {
+    if (font.widthOfTextAtSize(word, size) > width) {
+      if (line) lines.push(line);
+      line = "";
+      let chunk = "";
+      for (const character of Array.from(word)) {
+        const next = chunk + character;
+        if (chunk && font.widthOfTextAtSize(next, size) > width) {
+          lines.push(chunk);
+          chunk = character;
+        } else chunk = next;
+      }
+      line = chunk;
+      continue;
+    }
     const next = line ? `${line} ${word}` : word;
     if (font.widthOfTextAtSize(next, size) > width && line) {
       lines.push(line);
@@ -222,10 +236,15 @@ export default defineEventHandler(async (event) => {
   y -= 62;
 
   for (const row of orders) {
+    const gradeColorColumnWidth = 321;
     const description = wrap(row.productDescription, bold, 10, 485),
       sizes = parseOrderSizes(row.sizes),
-      gradeRows = Math.ceil(sizes.length / 2),
-      gradeHeight = sizes.length ? 29 + gradeRows * 14 : 0,
+      gradeColorLines = sizes.map((size: any) => {
+        const lines = wrap(size.color, regular, 7, gradeColorColumnWidth);
+        return lines.length ? lines : [""];
+      }),
+      gradeRowHeights = gradeColorLines.map((lines: string[]) => Math.max(14, lines.length * 8 + 6)),
+      gradeHeight = sizes.length ? 29 + gradeRowHeights.reduce((sum: number, value: number) => sum + value, 0) : 0,
       customerName = clean(row.customerName),
       customerDisplay = row.customerNickname
         ? `${customerName} (${clean(row.customerNickname)})`
@@ -373,32 +392,35 @@ export default defineEventHandler(async (event) => {
       innerY -= 11;
     });
     if (sizes.length) {
-      const gridX = 48, gridWidth = 499, groupWidth = gridWidth / 2;
+      const gridX = 48, gridWidth = 499, sizeColumnEnd = gridX + 96,
+        quantityColumnEnd = gridX + 162, colorX = gridX + 170;
       const gradeTotal = sizes.reduce((sum: number, size: any) => sum + Number(size.quantity || 0), 0);
-      const titleY = innerY - 7, gridTop = titleY - 5, headerHeight = 14, rowHeight = 14;
-      const gridHeight = headerHeight + gradeRows * rowHeight;
+      const titleY = innerY - 7, gridTop = titleY - 5, headerHeight = 14;
+      const rowsHeight = gradeRowHeights.reduce((sum: number, value: number) => sum + value, 0);
+      const gridHeight = headerHeight + rowsHeight;
       const subtleLine = rgb(0.82, 0.89, 0.84), gradeGreen = rgb(0.14, 0.45, 0.32);
-      page!.drawText("GRADE DE TAMANHOS", { x: gridX, y: titleY, size: 7, font: bold, color: gradeGreen });
+      page!.drawText("GRADE DE TAMANHOS E CORES", { x: gridX, y: titleY, size: 7, font: bold, color: gradeGreen });
       const gradeTotalText = `${gradeTotal} pares`;
       page!.drawText(gradeTotalText, { x: gridX + gridWidth - bold.widthOfTextAtSize(gradeTotalText, 7), y: titleY, size: 7, font: bold, color: gradeGreen });
       page!.drawRectangle({ x: gridX, y: gridTop - headerHeight, width: gridWidth, height: headerHeight, color: rgb(0.91, 0.96, 0.92) });
-      page!.drawLine({ start: { x: gridX, y: gridTop }, end: { x: gridX + gridWidth, y: gridTop }, thickness: 0.45, color: subtleLine });
-      page!.drawLine({ start: { x: gridX, y: gridTop - gridHeight }, end: { x: gridX + gridWidth, y: gridTop - gridHeight }, thickness: 0.45, color: subtleLine });
-      page!.drawLine({ start: { x: gridX + groupWidth, y: gridTop }, end: { x: gridX + groupWidth, y: gridTop - gridHeight }, thickness: 0.45, color: subtleLine });
-      for (let group = 0; group < 2; group++) {
-        const gx = gridX + group * groupWidth;
-        page!.drawText("Tamanho", { x: gx + 8, y: gridTop - 10, size: 7, font: bold, color: charcoal });
-        page!.drawText("Qtd.", { x: gx + groupWidth - 31, y: gridTop - 10, size: 7, font: bold, color: charcoal });
-      }
+      page!.drawRectangle({ x: gridX, y: gridTop - gridHeight, width: gridWidth, height: gridHeight, borderColor: subtleLine, borderWidth: 0.45 });
+      page!.drawLine({ start: { x: sizeColumnEnd, y: gridTop }, end: { x: sizeColumnEnd, y: gridTop - gridHeight }, thickness: 0.35, color: subtleLine });
+      page!.drawLine({ start: { x: quantityColumnEnd, y: gridTop }, end: { x: quantityColumnEnd, y: gridTop - gridHeight }, thickness: 0.35, color: subtleLine });
+      page!.drawText("Tamanho", { x: gridX + 8, y: gridTop - 10, size: 7, font: bold, color: charcoal });
+      page!.drawText("Qtd.", { x: sizeColumnEnd + 8, y: gridTop - 10, size: 7, font: bold, color: charcoal });
+      page!.drawText("Cor", { x: colorX, y: gridTop - 10, size: 7, font: bold, color: charcoal });
+      let rowTop = gridTop - headerHeight;
       sizes.forEach((size: any, index: number) => {
-        const group = Math.floor(index / gradeRows), rowIndex = index % gradeRows;
-        const rowTop = gridTop - headerHeight - rowIndex * rowHeight;
-        const gx = gridX + group * groupWidth;
-        if (rowIndex > 0) page!.drawLine({ start: { x: gx, y: rowTop }, end: { x: gx + groupWidth, y: rowTop }, thickness: 0.3, color: subtleLine });
-        page!.drawText(clean(size.size), { x: gx + 8, y: rowTop - 10, size: 8, font: regular, color: charcoal });
+        const rowHeight = gradeRowHeights[index];
+        page!.drawLine({ start: { x: gridX, y: rowTop }, end: { x: gridX + gridWidth, y: rowTop }, thickness: 0.3, color: subtleLine });
+        page!.drawText(clean(size.size), { x: gridX + 8, y: rowTop - 10, size: 8, font: regular, color: charcoal });
         const quantity = String(size.quantity);
         const quantityWidth = regular.widthOfTextAtSize(quantity, 8);
-        page!.drawText(quantity, { x: gx + groupWidth - 8 - quantityWidth, y: rowTop - 10, size: 8, font: regular, color: charcoal });
+        page!.drawText(quantity, { x: quantityColumnEnd - 8 - quantityWidth, y: rowTop - 10, size: 8, font: regular, color: charcoal });
+        gradeColorLines[index].forEach((line: string, lineIndex: number) => {
+          if (line) page!.drawText(line, { x: colorX, y: rowTop - 10 - lineIndex * 8, size: 7, font: regular, color: charcoal });
+        });
+        rowTop -= rowHeight;
       });
       innerY = gridTop - gridHeight - 3;
     }
