@@ -1050,6 +1050,7 @@ async function pdf(item?: Pick<OrderListItem, "id">, selectedIds: number[] = [])
     }
     const blob = await response.blob();
     pdfFileName.value = `relatorio-pedidos-${serverTime.value.slice(0, 10) || "mavi"}.pdf`;
+    pdfPreviewData.value = new Uint8Array(await blob.arrayBuffer());
     pdfPreviewUrl.value = URL.createObjectURL(blob);
     try {
       pdfFile.value = new File([blob], pdfFileName.value, { type: "application/pdf" });
@@ -1072,12 +1073,14 @@ async function pdf(item?: Pick<OrderListItem, "id">, selectedIds: number[] = [])
 const pdfModal = ref(false),
   pdfLoading = ref(false),
   pdfPreviewUrl = ref(""),
+  pdfPreviewData = ref<Uint8Array | null>(null),
   pdfFileName = ref("relatorio-pedidos.pdf"),
   pdfFile = ref<File | null>(null);
 function closePdfModal() {
   pdfModal.value = false;
   if (pdfPreviewUrl.value) URL.revokeObjectURL(pdfPreviewUrl.value);
   pdfPreviewUrl.value = "";
+  pdfPreviewData.value = null;
   pdfFile.value = null;
 }
 async function sharePdf() {
@@ -2842,6 +2845,7 @@ async function saveServiceType() {
         v-else-if="pdfModal"
         :loading="pdfLoading"
         :preview-url="pdfPreviewUrl"
+        :pdf-data="pdfPreviewData"
         :file="pdfFile"
         :file-name="pdfFileName"
         @dismiss="closePdfModal"

@@ -12,6 +12,7 @@ let mobileLoadVersion = 0;
 const props = defineProps<{
   loading: boolean;
   previewUrl: string;
+  pdfData: Uint8Array | null;
   file: File | null;
   fileName: string;
 }>();
@@ -39,7 +40,9 @@ watch([() => props.previewUrl, isMobilePreview, () => props.loading], async ([ur
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    const document = await pdfjs.getDocument(url).promise;
+    const data = props.pdfData;
+    if (!data?.byteLength) throw new Error("O conteúdo do PDF não foi recebido.");
+    const document = await pdfjs.getDocument({ data: data.slice() }).promise;
     if (version !== mobileLoadVersion) return;
     mobilePdfPages.value = Array.from({ length: document.numPages }, (_, index) => index + 1);
     await nextTick();
@@ -62,7 +65,8 @@ watch([() => props.previewUrl, isMobilePreview, () => props.loading], async ([ur
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       await page.render({ canvasContext: context, viewport }).promise;
     }
-  } catch {
+  } catch (error) {
+    console.error("Falha ao renderizar a prévia móvel do PDF:", error);
     if (version === mobileLoadVersion) mobilePdfError.value = true;
   } finally {
     if (version === mobileLoadVersion) mobilePdfLoading.value = false;
