@@ -100,6 +100,18 @@ function fittedFontSize(text: string, font: PDFFont, preferredSize: number, maxW
   return size;
 }
 
+function fitSingleLine(text: string, font: PDFFont, preferredSize: number, maxWidth: number) {
+  const size = fittedFontSize(text, font, preferredSize, maxWidth);
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return { text, size };
+
+  const suffix = "...";
+  let fitted = text;
+  while (fitted && font.widthOfTextAtSize(`${fitted}${suffix}`, size) > maxWidth) {
+    fitted = fitted.slice(0, -1).trimEnd();
+  }
+  return { text: fitted ? `${fitted}${suffix}` : "", size };
+}
+
 export default defineEventHandler(async (event) => {
   requirePermission(event, "pdf:generate");
   const generatedAt = String(
@@ -291,17 +303,36 @@ export default defineEventHandler(async (event) => {
       height: 29,
       color: red,
     });
-    page!.drawText(clean(row.orderType).toUpperCase(), {
-      x: 48,
+    const headerStartX = 48,
+      headerEndX = 547,
+      headerGap = 14,
+      orderReference = `#${clean(row.orderNumber)}  •  ${clean(row.customerName)}`,
+      fittedOrderReference = fitSingleLine(orderReference, bold, 8.5, 235),
+      orderReferenceWidth = bold.widthOfTextAtSize(
+        fittedOrderReference.text,
+        fittedOrderReference.size,
+      ),
+      orderReferenceX = headerEndX - orderReferenceWidth,
+      orderType = fitSingleLine(
+        clean(row.orderType).toUpperCase(),
+        bold,
+        11,
+        orderReferenceX - headerGap - headerStartX,
+      );
+    page!.drawText(orderType.text, {
+      x: headerStartX,
       y: y - 17,
-      size: fittedFontSize(clean(row.orderType).toUpperCase(), bold, 11, 100),
+      size: orderType.size,
       font: bold,
       color: rgb(1, 1, 1),
     });
-    page!.drawText(
-      `#${clean(row.orderNumber)}  •  ${clean(row.customerName)}`,
-      { x: 160, y: y - 19, size: 8.5, font: bold, color: rgb(1, 1, 1) },
-    );
+    page!.drawText(fittedOrderReference.text, {
+      x: orderReferenceX,
+      y: y - 19,
+      size: fittedOrderReference.size,
+      font: bold,
+      color: rgb(1, 1, 1),
+    });
     let innerY = y - 47;
     const deliveryDetails = `Entrega: ${date(row.withdrawalDate)}${row.withdrawnBy ? `  •  Retirado por: ${clean(row.withdrawnBy)}` : ""}`;
     const orderDates = `Pedido: ${date(row.orderDate)}    ${deliveryDetails}`;
