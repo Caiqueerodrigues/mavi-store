@@ -886,7 +886,26 @@ const gradeQuantity = computed(() =>
   dashboardStatusMax = computed(() =>
     Math.max(1, ...(dashboard.value?.statuses || []).map((item: any) => Number(item.total))),
   );
-async function editOrder(item?: OrderListItem) {
+async function ensureOrderFormOptions() {
+  if (!customers.value.length) {
+    await fetchTablePage(
+      "customers",
+      "/api/customers?active=true&sort=name&direction=asc",
+      () => customers.value,
+      (value) => (customers.value = value),
+      true,
+    );
+  }
+}
+async function openNewOrder() {
+  await ensureOrderFormOptions();
+  await editOrder();
+}
+async function openDashboardOrder(item: Pick<OrderListItem, "id">) {
+  await ensureOrderFormOptions();
+  await editOrder(item);
+}
+async function editOrder(item?: Pick<OrderListItem, "id">) {
   try {
     orderServiceTypes.value = await api<ServiceType[]>(
       "/api/service-types?active=true",
@@ -1559,8 +1578,7 @@ async function saveServiceType() {
             v-if="canWriteOrders"
             class="button light-button"
             @click="
-              go('orders');
-              editOrder();
+              openNewOrder();
             "
           >
             <Icon name="lucide:plus" />Nova ordem de serviço
@@ -1664,7 +1682,13 @@ async function saveServiceType() {
             <div
               v-for="o in dashboard?.recentOrders || []"
               :key="o.id"
-              class="product-row"
+              class="product-row clickable-row"
+              role="button"
+              tabindex="0"
+              :aria-label="`Abrir detalhes do pedido ${o.orderNumber}`"
+              @click="openDashboardOrder(o)"
+              @keydown.enter="openDashboardOrder(o)"
+              @keydown.space.prevent="openDashboardOrder(o)"
             >
               <span class="product-avatar">{{ o.orderNumber.slice(-2) }}</span>
               <div class="grow">
