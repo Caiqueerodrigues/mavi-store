@@ -977,8 +977,7 @@ async function saveOrder() {
       body: orderForm,
     });
     orderModal.value = false;
-    if (route.path !== "/servicos") await router.push("/servicos");
-    tab.value = "orders";
+    if (routeTabs[route.path] === "orders") tab.value = "orders";
     await Promise.all([loadOrders(), loadDashboard()]);
     await loadAudit();
     toast("Pedido salvo e auditado.");
