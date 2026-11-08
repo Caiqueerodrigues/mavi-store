@@ -2496,7 +2496,7 @@ async function saveServiceType() {
         </div>
         <div v-if="orderForm.sizes.length" class="size-grid">
           <div v-for="(s, i) in orderForm.sizes" :key="i">
-            <input v-model="s.size" placeholder="Tamanho" /><input
+            <input v-model="s.size" placeholder="Tamanho" required /><input
               v-model.number="s.quantity"
               type="number"
               min="1"
