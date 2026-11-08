@@ -84,7 +84,11 @@ const digest = (value: string) =>
 
 export function clientIp(event: H3Event) {
   const trustProxy = String(useRuntimeConfig().trustProxy).toLowerCase() === "true";
-  return getRequestIP(event, { xForwardedFor: trustProxy }) || "unknown";
+  if (!trustProxy) return getRequestIP(event) || "unknown";
+  const cloudflareIp = getHeader(event, "cf-connecting-ip")?.split(",")[0]?.trim();
+  const forwardedIp = getHeader(event, "x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = getHeader(event, "x-real-ip")?.trim();
+  return cloudflareIp || forwardedIp || realIp || getRequestIP(event) || "unknown";
 }
 
 async function signToken(

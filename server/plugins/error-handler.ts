@@ -1,3 +1,5 @@
+import { clientIp } from '../utils/auth'
+
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('error', async (error: any, context: any) => {
     const event = context?.event
@@ -30,6 +32,7 @@ export default defineNitroPlugin((nitroApp) => {
       message: String(error.message || error.statusMessage || 'Erro desconhecido').slice(0, 2000),
       userId: user?.id || null,
       role: user?.role || null,
+      ipAddress: clientIp(event),
       stack: statusCode >= 500 ? String(error.stack || '').slice(0, 16_000) : undefined,
     })}\n`)
     try {

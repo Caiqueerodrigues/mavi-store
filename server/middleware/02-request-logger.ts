@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { clientIp } from "../utils/auth";
 
 const STATIC_PREFIXES = ["/_nuxt/", "/assets/", "/favicon."];
 
@@ -30,6 +31,7 @@ export default defineEventHandler((event) => {
       durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
       userId: user?.id || null,
       role: user?.role || null,
+      ipAddress: clientIp(event),
     };
 
     const line = `${JSON.stringify(entry)}\n`;

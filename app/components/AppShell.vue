@@ -412,6 +412,10 @@ function csrf() {
       ?.split("=")[1] || "",
   );
 }
+function markFormValidated(event: Event) {
+  const form = (event.target as HTMLElement)?.closest?.("form");
+  form?.classList.add("was-validated");
+}
 function syncServerTime(headers: Headers) {
   const value = headers.get("x-server-time");
   if (value) {
@@ -1547,7 +1551,12 @@ async function saveServiceType() {
     @toggle-password="passwordVisible.login = !passwordVisible.login"
     @update-remember-login="rememberLogin = $event"
   />
-  <div v-else class="shell">
+  <div
+    v-else
+    class="shell"
+    @submit.capture="markFormValidated"
+    @invalid.capture="markFormValidated"
+  >
     <AppSidebar
       :items="nav"
       :selected="tab"

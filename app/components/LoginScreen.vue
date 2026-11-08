@@ -12,6 +12,10 @@ defineEmits<{
   togglePassword: [];
   updateRememberLogin: [value: boolean];
 }>();
+
+function submit(event: Event) {
+  (event.currentTarget as HTMLFormElement).classList.add("was-validated");
+}
 </script>
 
 <template>
@@ -24,7 +28,7 @@ defineEmits<{
         <p>Custos, pedidos, relatórios e rastreabilidade em um único lugar.</p>
       </div>
     </section>
-    <form class="login-card" @submit.prevent="$emit('login')">
+    <form class="login-card" novalidate @submit.prevent="submit($event); $emit('login')">
       <span class="eyebrow">Acesso seguro</span>
       <h2>Bem-vindo de volta</h2>
       <p>Use as credenciais fornecidas pelo administrador.</p>

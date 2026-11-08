@@ -106,3 +106,13 @@ input[type=checkbox]{appearance:auto!important;-webkit-appearance:checkbox!impor
   .dashboard-page .product-row>.status-badge{display:flex;grid-column:3;grid-row:1;justify-self:end;max-width:100px;padding:5px 7px;font-size:9px;line-height:1.2;white-space:normal}
 }
 .clickable-row{cursor:pointer}.clickable-row:hover{background:#f7faf8}.clickable-row:focus-visible{outline:2px solid var(--green-2);outline-offset:-2px}
+
+/* Campos obrigatórios e erros de validação */
+label:has(:required){position:relative}
+label:has(:required)::after{content:"*";position:absolute;top:0;right:0;color:#c6283d;font-size:15px;font-weight:800;line-height:1}
+form.was-validated input:required:invalid,
+form.was-validated select:required:invalid,
+form.was-validated textarea:required:invalid{border-color:#c6283d;background:#fff5f6;box-shadow:0 0 0 3px rgba(198,40,61,.12)}
+form.was-validated input:required:invalid:focus,
+form.was-validated select:required:invalid:focus,
+form.was-validated textarea:required:invalid:focus{border-color:#a91f32;box-shadow:0 0 0 3px rgba(198,40,61,.18)}
