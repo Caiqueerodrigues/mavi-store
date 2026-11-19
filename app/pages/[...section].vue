@@ -7,6 +7,7 @@ const paths = [
   "/visao-geral",
   "/servicos",
   "/pedidos",
+  "/contas-a-pagar",
   "/clientes",
   "/produtos",
   "/insumos",

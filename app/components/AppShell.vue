@@ -84,6 +84,20 @@ type OrderListItem = Pick<
   | "paymentStatus"
   | "status"
 >;
+type PayableService = {
+  id: number;
+  orderDate: string;
+  deliveryDate: string | null;
+  agreedAmount: number;
+  quantity: number;
+  serviceTypeId: number | null;
+  serviceTypeName: string;
+  recipientName: string;
+  totalAmount: number;
+  paymentDate: string | null;
+  paymentStatus: "pending" | "paid" | "cancelled";
+};
+type PayableServiceListItem = Omit<PayableService, "serviceTypeId">;
 type ProductListItem = Omit<Product, "components" | "variations">;
 type UserListItem = Omit<User, "mustChangePassword">;
 const ready = ref(false),
@@ -95,6 +109,7 @@ const ready = ref(false),
     "/visao-geral": "dashboard",
     "/servicos": "orders",
     "/pedidos": "orders",
+    "/contas-a-pagar": "payables",
     "/clientes": "customers",
     "/produtos": "products",
     "/insumos": "materials",
@@ -110,6 +125,7 @@ const ready = ref(false),
   noticeType = ref<"success" | "error">("success");
 const dashboard = ref<any>(null),
   orders = ref<OrderListItem[]>([]),
+  payableServices = ref<PayableServiceListItem[]>([]),
   customers = ref<Customer[]>([]),
   serviceTypes = ref<ServiceType[]>([]),
   orderServiceTypes = ref<ServiceType[]>([]),
@@ -179,6 +195,9 @@ function scheduleTableFilter(key: "customers" | "materials" | "serviceTypes" | "
 function scheduleOrderFilter() {
   debounceFilter("orders", loadOrders);
 }
+function schedulePayableFilter() {
+  debounceFilter("payables", loadPayableServices);
+}
 function scheduleProductFilter() {
   debounceFilter("products", loadProducts);
 }
@@ -192,6 +211,7 @@ function tableScroll(key: string, event: Event, load: () => Promise<void>) {
 function loadNextTable(key: string) {
   const requests: Record<string, () => Promise<void>> = {
     orders: () => fetchTablePage("orders", `/api/orders?${new URLSearchParams(orderFilters)}`, () => orders.value, (v) => (orders.value = v)),
+    payables: () => fetchTablePage("payables", `/api/payable-services?${new URLSearchParams(payableFilters)}`, () => payableServices.value, (v) => (payableServices.value = v)),
     customers: () => loadFilteredTable("customers", false),
     materials: () => loadFilteredTable("materials", false),
     serviceTypes: () => loadFilteredTable("serviceTypes", false),
@@ -221,16 +241,44 @@ async function resetTableFilters(key: "customers" | "materials" | "serviceTypes"
 function sortIcon(filters: { sort: string; direction: string }, column: string) {
   return filters.sort === column ? (filters.direction === "asc" ? "lucide:arrow-up" : "lucide:arrow-down") : "lucide:arrow-up-down";
 }
-async function sortTable(key: "orders" | "customers" | "materials" | "serviceTypes" | "channels" | "users" | "audit", column: string) {
-  const filters: any = key === "orders" ? orderFilters : tableFilters[key];
+async function sortTable(key: "orders" | "payables" | "customers" | "materials" | "serviceTypes" | "channels" | "users" | "audit", column: string) {
+  const filters: any = key === "orders" ? orderFilters : key === "payables" ? payableFilters : tableFilters[key];
   filters.direction = filters.sort === column && filters.direction === "asc" ? "desc" : "asc";
   filters.sort = column;
   if (key === "orders") await loadOrders();
+  else if (key === "payables") await loadPayableServices();
   else if (key === "audit") await loadAudit();
   else await loadFilteredTable(key);
 }
 const dashboardFilters = reactive({ from: "", to: "" }),
-  orderFilters = reactive({ search: "", from: "", to: "", status: "", paymentStatus: "", sort: "orderDate", direction: "desc" });
+  orderFilters = reactive({ search: "", from: "", to: "", status: "", paymentStatus: "", sort: "orderDate", direction: "desc" }),
+  payableFilters = reactive({ search: "", from: "", to: "", paymentStatus: "", sort: "orderDate", direction: "desc" });
+const currentFilterDate = computed(() => serverTime.value.slice(0, 10));
+const defaultYesterday = computed(() => {
+  const [year = 0, month = 1, day = 1] = currentFilterDate.value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+});
+const dashboardFiltersChanged = computed(
+    () => dashboardFilters.from !== `${currentFilterDate.value.slice(0, 7)}-01` || dashboardFilters.to !== currentFilterDate.value,
+  ),
+  orderFiltersChanged = computed(
+    () =>
+      orderFilters.search !== "" ||
+      orderFilters.from !== defaultYesterday.value ||
+      orderFilters.to !== currentFilterDate.value ||
+      orderFilters.status !== "" ||
+      orderFilters.paymentStatus !== "",
+  ),
+  payableFiltersChanged = computed(
+    () =>
+      payableFilters.search !== "" ||
+      payableFilters.from !== `${currentFilterDate.value.slice(0, 7)}-01` ||
+      payableFilters.to !== currentFilterDate.value ||
+      payableFilters.paymentStatus !== "",
+  ),
+  customerFiltersChanged = computed(
+    () => tableFilters.customers.search !== "" || tableFilters.customers.active !== "",
+  );
 const productCategory = ref(""),
   productStatus = ref("all"),
   parameterTab = ref<"services" | "pricing">(
@@ -278,6 +326,11 @@ const roleLabels: Record<Role, string> = {
     partial: "Parcial",
     paid: "Pago",
     refunded: "Estornado",
+  },
+  payableStatusLabels: Record<string, string> = {
+    pending: "Pendente",
+    paid: "Pago",
+    cancelled: "Cancelado",
   };
 const money = (v = 0) =>
     new Intl.NumberFormat("pt-BR", {
@@ -350,6 +403,12 @@ const nav = computed(() =>
       label: "Clientes",
       icon: "lucide:contact-round",
       show: true,
+    },
+    {
+      id: "payables",
+      label: "Contas a pagar",
+      icon: "lucide:landmark",
+      show: canCosts.value,
     },
     {
       id: "products",
@@ -425,7 +484,7 @@ function syncServerTime(headers: Headers) {
 }
 function initializeDateFilterDefaults(today: string) {
   if (dateFilterDefaultsInitialized) return;
-  const [year, month, day] = today.split("-").map(Number);
+  const [year = 0, month = 1, day = 1] = today.split("-").map(Number);
   const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
     .toISOString()
     .slice(0, 10);
@@ -433,6 +492,8 @@ function initializeDateFilterDefaults(today: string) {
   dashboardFilters.to = today;
   orderFilters.from = yesterday;
   orderFilters.to = today;
+  payableFilters.from = `${today.slice(0, 7)}-01`;
+  payableFilters.to = today;
   dateFilterDefaultsInitialized = true;
 }
 function openDatePicker(event: Event) {
@@ -624,6 +685,9 @@ async function loadRouteData(path = route.path) {
     case "/clientes":
       await loadFilteredTable("customers");
       break;
+    case "/contas-a-pagar":
+      await loadPayableServices();
+      break;
     case "/produtos":
       await Promise.all([
         loadProductOptions(),
@@ -672,15 +736,30 @@ async function loadDashboard() {
   const result = await api(`/api/dashboard?${new URLSearchParams(dashboardFilters).toString()}`);
   if (requestId === dashboardRequestId) dashboard.value = result;
 }
+async function resetDashboardFilters() {
+  const today = currentFilterDate.value;
+  Object.assign(dashboardFilters, { from: `${today.slice(0, 7)}-01`, to: today });
+  await loadDashboard();
+}
 async function loadOrders() {
   cancelFilterDebounce("orders");
   await fetchTablePage("orders", `/api/orders?${new URLSearchParams(orderFilters).toString()}`, () => orders.value, (v) => (orders.value = v), true);
   selectedOrders.value = [];
 }
+async function loadPayableServices() {
+  cancelFilterDebounce("payables");
+  await fetchTablePage("payables", `/api/payable-services?${new URLSearchParams(payableFilters).toString()}`, () => payableServices.value, (value) => (payableServices.value = value), true);
+}
+async function resetPayableFilters() {
+  cancelFilterDebounce("payables");
+  const today = serverTime.value.slice(0, 10);
+  Object.assign(payableFilters, { search: "", from: `${today.slice(0, 7)}-01`, to: today, paymentStatus: "" });
+  await loadPayableServices();
+}
 async function resetOrderFilters() {
   cancelFilterDebounce("orders");
   const today = serverTime.value.slice(0, 10);
-  const [year, month, day] = today.split("-").map(Number);
+  const [year = 0, month = 1, day = 1] = today.split("-").map(Number);
   const yesterday = new Date(Date.UTC(year, month - 1, day - 1))
     .toISOString()
     .slice(0, 10);
@@ -834,6 +913,62 @@ const activeCustomers = computed(() =>
 );
 const selectedOrders = ref<number[]>([]),
   bulkAction = ref("");
+const payableModal = ref(false),
+  payableForm = reactive<any>({
+    id: 0,
+    orderDate: "",
+    deliveryDate: null,
+    agreedAmount: 0,
+    quantity: null,
+    serviceTypeName: "",
+    recipientName: "",
+    totalAmount: 0,
+    paymentDate: null,
+    paymentStatus: "pending",
+  });
+async function editPayableService(item?: Pick<PayableServiceListItem, "id">) {
+  let details: PayableService | undefined;
+  if (item) {
+    const loaded = await fetchListItemDetail<PayableService>("payable-services", item.id);
+    if (!loaded) return;
+    details = loaded;
+  }
+  Object.assign(payableForm, details || {
+    id: 0,
+    orderDate: serverTime.value.slice(0, 10),
+    deliveryDate: null,
+    agreedAmount: 0,
+    quantity: null,
+    serviceTypeName: "",
+    recipientName: "",
+    totalAmount: 0,
+    paymentDate: null,
+    paymentStatus: "pending",
+  });
+  payableForm.orderDate = dateInputValue(payableForm.orderDate) || serverTime.value.slice(0, 10);
+  payableForm.deliveryDate = dateInputValue(payableForm.deliveryDate) || null;
+  payableForm.paymentDate = dateInputValue(payableForm.paymentDate) || null;
+  payableModal.value = true;
+}
+async function savePayableService() {
+  busy.value = true;
+  try {
+    await api(payableForm.id ? `/api/payable-services/${payableForm.id}` : "/api/payable-services", {
+      method: payableForm.id ? "PUT" : "POST",
+      body: payableForm,
+    });
+    payableModal.value = false;
+    await loadPayableServices();
+    toast("Conta a pagar salva e auditada.");
+  } catch (error: any) {
+    toast(error?.data?.message || "Não foi possível salvar a conta a pagar", "error");
+  } finally {
+    busy.value = false;
+  }
+}
+watch(() => payableForm.paymentStatus, (status) => {
+  if (status !== "paid") payableForm.paymentDate = null;
+});
 const orderModal = ref(false),
   orderForm = reactive<any>({
     id: 0,
@@ -848,7 +983,7 @@ const orderModal = ref(false),
     orderDate: serverTime.value.slice(0, 10),
     dueDate: null,
     paymentDate: null,
-    quantity: 1,
+    quantity: null,
     unitPrice: 0,
     paidAmount: 0,
     paymentStatus: "pending",
@@ -942,7 +1077,7 @@ async function editOrder(item?: Pick<OrderListItem, "id">) {
           orderDate: serverTime.value.slice(0, 10),
           dueDate: null,
           paymentDate: null,
-          quantity: 1,
+          quantity: null,
           unitPrice: 0,
           paidAmount: 0,
           paymentStatus: "pending",
@@ -971,7 +1106,7 @@ function selectServiceType() {
   }
 }
 function addSize() {
-  orderForm.sizes.push({ size: "", quantity: 1, color: "" });
+  orderForm.sizes.push({ size: "", quantity: null, color: "" });
 }
 async function saveOrder() {
   busy.value = true;
@@ -1193,7 +1328,7 @@ async function saveUser() {
     busy.value = false;
   }
 }
-async function deleteUser(item: User) {
+async function deleteUser(item: UserListItem) {
   if (!(await confirmInModal(`Excluir ${item.name}?`, "Excluir usuário", "Excluir usuário"))) return;
   await api(`/api/users/${item.id}`, { method: "DELETE" });
   await loadFilteredTable("users");
@@ -1595,7 +1730,7 @@ async function saveServiceType() {
         <form class="panel period-filters" @submit.prevent="loadDashboard">
           <label>De<input v-model="dashboardFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadDashboard" /></label>
           <label>Até<input v-model="dashboardFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadDashboard" /></label>
-          <button class="button"><Icon name="lucide:filter" />Atualizar período</button>
+          <button v-if="dashboardFiltersChanged" type="button" class="button ghost" @click="resetDashboardFilters">Limpar filtros</button>
         </form>
         <div class="metrics">
           <article>
@@ -1740,10 +1875,9 @@ async function saveServiceType() {
           <label>Buscar<input v-model.trim="orderFilters.search" type="search" placeholder="Cliente, serviço ou observação" @input="scheduleOrderFilter" /></label>
           <label>De<input v-model="orderFilters.from" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadOrders" /></label>
           <label>Até<input v-model="orderFilters.to" type="date" :max="serverTime.slice(0, 10)" @click="openDatePicker" @change="loadOrders" /></label>
-          <label>Situação da produção<select v-model="orderFilters.status" @change="scheduleOrderFilter"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus" @change="scheduleOrderFilter"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
-          <button type="button" class="button ghost" @click="resetOrderFilters">Hoje</button>
+          <label>Situação da produção<select v-model="orderFilters.status" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação do pagamento<select v-model="orderFilters.paymentStatus" @change="loadOrders"><option value="">Todas</option><option v-for="(label, key) in paymentStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <button v-if="orderFiltersChanged" type="button" class="button ghost" @click="resetOrderFilters">Limpar filtros</button>
         </form>
         <div v-if="selectedOrders.length" class="panel bulk-actions">
           <strong>{{ selectedOrders.length }} selecionado(s)</strong
@@ -1880,6 +2014,47 @@ async function saveServiceType() {
           </table>
         </div>
       </section>
+      <section v-else-if="tab === 'payables'" class="content">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Financeiro</span>
+            <h2>Contas a pagar</h2>
+            <p>Serviços prestados à empresa e seus pagamentos.</p>
+          </div>
+          <button class="button" @click="editPayableService()"><Icon name="lucide:plus" />Nova conta</button>
+        </div>
+        <form class="panel data-table-filters" @submit.prevent="loadPayableServices">
+          <label>Buscar<input v-model.trim="payableFilters.search" type="search" placeholder="Tipo de serviço ou recebedor" @input="schedulePayableFilter" /></label>
+          <label>De<input v-model="payableFilters.from" type="date" @change="loadPayableServices" @click="openDatePicker" /></label>
+          <label>Até<input v-model="payableFilters.to" type="date" @change="loadPayableServices" @click="openDatePicker" /></label>
+          <label>Status do pagamento<select v-model="payableFilters.paymentStatus" @change="loadPayableServices"><option value="">Todos</option><option v-for="(label, key) in payableStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <button v-if="payableFiltersChanged" type="button" class="button ghost" @click="resetPayableFilters">Limpar filtros</button>
+          <span class="table-count">{{ tablePages.payables?.total || 0 }} registro(s)</span>
+        </form>
+        <div class="panel table-wrap" @scroll="tableScroll('payables', $event, () => loadNextTable('payables'))">
+          <table>
+            <thead><tr>
+              <th><button class="sort-button" @click="sortTable('payables', 'orderDate')">Data do pedido<Icon :name="sortIcon(payableFilters, 'orderDate')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'deliveryDate')">Data de entrega<Icon :name="sortIcon(payableFilters, 'deliveryDate')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'serviceTypeName')">Tipo de serviço<Icon :name="sortIcon(payableFilters, 'serviceTypeName')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'recipientName')">Recebedor<Icon :name="sortIcon(payableFilters, 'recipientName')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'quantity')">Pares<Icon :name="sortIcon(payableFilters, 'quantity')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'agreedAmount')">Valor combinado<Icon :name="sortIcon(payableFilters, 'agreedAmount')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'totalAmount')">Valor total<Icon :name="sortIcon(payableFilters, 'totalAmount')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'paymentDate')">Pagamento<Icon :name="sortIcon(payableFilters, 'paymentDate')" /></button></th>
+              <th><button class="sort-button" @click="sortTable('payables', 'paymentStatus')">Status<Icon :name="sortIcon(payableFilters, 'paymentStatus')" /></button></th>
+              <th></th>
+            </tr></thead>
+            <tbody><tr v-for="item in payableServices" :key="item.id">
+              <td>{{ brDate(item.orderDate) }}</td><td>{{ brDate(item.deliveryDate) }}</td><td><strong>{{ item.serviceTypeName }}</strong></td><td>{{ item.recipientName }}</td><td>{{ item.quantity }}</td>
+              <td>{{ money(item.agreedAmount) }}</td><td><strong>{{ money(item.totalAmount) }}</strong></td><td>{{ brDate(item.paymentDate) }}</td>
+              <td><span :class="['status-badge', item.paymentStatus === 'paid' ? 'ready' : item.paymentStatus === 'cancelled' ? 'cancelled' : 'pending']">{{ payableStatusLabels[item.paymentStatus] }}</span></td>
+              <td class="actions"><button class="tiny-button" title="Editar" @click="editPayableService(item)"><Icon name="lucide:pencil" /></button></td>
+            </tr></tbody>
+          </table>
+          <div v-if="!payableServices.length" class="empty">Nenhuma conta a pagar encontrada.</div>
+        </div>
+      </section>
       <section v-else-if="tab === 'customers'" class="content">
         <div class="section-head">
           <div>
@@ -1893,9 +2068,8 @@ async function saveServiceType() {
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('customers')">
           <label>Buscar<input v-model.trim="tableFilters.customers.search" type="search" placeholder="Nome, apelido ou telefone" @input="scheduleTableFilter('customers')" /></label>
-          <label>Situação<select v-model="tableFilters.customers.active" @change="scheduleTableFilter('customers')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
-          <button type="button" class="button ghost" @click="resetTableFilters('customers')">Limpar</button>
+          <label>Situação<select v-model="tableFilters.customers.active" @change="loadFilteredTable('customers')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
+          <button v-if="customerFiltersChanged" type="button" class="button ghost" @click="resetTableFilters('customers')">Limpar filtros</button>
           <span class="table-count">{{ tablePages.customers?.total || 0 }} registro(s)</span>
         </form>
         <div class="panel table-wrap" @scroll="tableScroll('customers', $event, () => loadNextTable('customers'))">
@@ -1953,7 +2127,7 @@ async function saveServiceType() {
           </div>
           <div class="head-actions">
           <label class="category-filter"
-            >Categoria<select v-model="productCategory" @change="scheduleProductFilter">
+            >Categoria<select v-model="productCategory" @change="loadProducts">
               <option value="">Todas as categorias</option>
               <option
                 v-for="category in productCategories"
@@ -1964,7 +2138,7 @@ async function saveServiceType() {
               </option>
             </select></label>
           <label class="category-filter"
-            >Situação<select v-model="productStatus" @change="scheduleProductFilter">
+            >Situação<select v-model="productStatus" @change="loadProducts">
               <option value="all">Todos</option>
               <option value="true">Ativos</option>
               <option value="false">Inativos</option>
@@ -2036,9 +2210,8 @@ async function saveServiceType() {
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('materials')">
           <label>Buscar<input v-model.trim="tableFilters.materials.search" type="search" placeholder="Insumo, fornecedor ou unidade" @input="scheduleTableFilter('materials')" /></label>
-          <label>Tipo<select v-model="tableFilters.materials.costType" @change="scheduleTableFilter('materials')"><option value="">Todos</option><option v-for="(label, key) in costTypeLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação<select v-model="tableFilters.materials.active" @change="scheduleTableFilter('materials')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <label>Tipo<select v-model="tableFilters.materials.costType" @change="loadFilteredTable('materials')"><option value="">Todos</option><option v-for="(label, key) in costTypeLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.materials.active" @change="loadFilteredTable('materials')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button type="button" class="button ghost" @click="resetTableFilters('materials')">Limpar</button>
           <span class="table-count">{{ tablePages.materials?.total || 0 }} registro(s)</span>
         </form>
@@ -2115,8 +2288,7 @@ async function saveServiceType() {
         </div>
         <form v-if="parameterTab === 'services'" class="panel data-table-filters" @submit.prevent="loadFilteredTable('serviceTypes')">
           <label>Buscar<input v-model.trim="tableFilters.serviceTypes.search" type="search" placeholder="Nome do serviço" @input="scheduleTableFilter('serviceTypes')" /></label>
-          <label>Situação<select v-model="tableFilters.serviceTypes.active" @change="scheduleTableFilter('serviceTypes')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <label>Situação<select v-model="tableFilters.serviceTypes.active" @change="loadFilteredTable('serviceTypes')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button type="button" class="button ghost" @click="resetTableFilters('serviceTypes')">Limpar</button>
           <span class="table-count">{{ tablePages.serviceTypes?.total || 0 }} registro(s)</span>
         </form>
@@ -2204,8 +2376,7 @@ async function saveServiceType() {
           <p class="panel-description">Configure a comissão percentual e a tarifa fixa cobrada por unidade.</p>
           <form class="data-table-filters inline-filters" @submit.prevent="loadFilteredTable('channels')">
             <label>Buscar<input v-model.trim="tableFilters.channels.search" type="search" placeholder="Nome do canal" @input="scheduleTableFilter('channels')" /></label>
-            <label>Situação<select v-model="tableFilters.channels.active" @change="scheduleTableFilter('channels')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
-            <button class="button"><Icon name="lucide:search" />Filtrar</button>
+            <label>Situação<select v-model="tableFilters.channels.active" @change="loadFilteredTable('channels')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
             <button type="button" class="button ghost" @click="resetTableFilters('channels')">Limpar</button>
             <span class="table-count">{{ tablePages.channels?.total || 0 }} registro(s)</span>
           </form>
@@ -2235,9 +2406,8 @@ async function saveServiceType() {
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadFilteredTable('users')">
           <label>Buscar<input v-model.trim="tableFilters.users.search" type="search" placeholder="Nome ou e-mail" @input="scheduleTableFilter('users')" /></label>
-          <label>Perfil<select v-model="tableFilters.users.role" @change="scheduleTableFilter('users')"><option value="">Todos</option><option v-for="(label, key) in roleLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <label>Situação<select v-model="tableFilters.users.active" @change="scheduleTableFilter('users')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
+          <label>Perfil<select v-model="tableFilters.users.role" @change="loadFilteredTable('users')"><option value="">Todos</option><option v-for="(label, key) in roleLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Situação<select v-model="tableFilters.users.active" @change="loadFilteredTable('users')"><option value="">Todas</option><option value="true">Ativos</option><option value="false">Inativos</option></select></label>
           <button type="button" class="button ghost" @click="resetTableFilters('users')">Limpar</button>
           <span class="table-count">{{ tablePages.users?.total || 0 }} registro(s)</span>
         </form>
@@ -2311,7 +2481,6 @@ async function saveServiceType() {
         </div>
         <form class="panel data-table-filters" @submit.prevent="loadAudit()">
           <label>Buscar<input v-model.trim="tableFilters.audit.search" type="search" placeholder="Usuário, ação ou entidade" @input="scheduleAuditFilter" /></label>
-          <button class="button"><Icon name="lucide:search" />Filtrar</button>
           <button type="button" class="button ghost" @click="tableFilters.audit.search = ''; loadAudit()">Limpar</button>
           <span class="table-count">{{ auditData.total || 0 }} registro(s)</span>
         </form>
@@ -2351,6 +2520,7 @@ async function saveServiceType() {
     <div
       v-if="
         orderModal ||
+        payableModal ||
         customerModal ||
         serviceTypeModal ||
         channelModal ||
@@ -2363,7 +2533,26 @@ async function saveServiceType() {
       "
       class="modal-backdrop"
     >
-      <form v-if="orderModal" class="modal wide" @submit.prevent="saveOrder">
+      <form v-if="payableModal" class="modal" @submit.prevent="savePayableService">
+        <div class="modal-head"><div><span class="eyebrow">Financeiro</span><h2>{{ payableForm.id ? "Editar conta" : "Nova conta a pagar" }}</h2></div><button type="button" class="tiny-button" @click="payableModal = false"><Icon name="lucide:x" /></button></div>
+        <div class="two-cols">
+          <label>Data do pedido<input v-model="payableForm.orderDate" type="date" required @click="openDatePicker" /></label>
+          <label>Data de entrega<input v-model="payableForm.deliveryDate" type="date" @click="openDatePicker" /></label>
+        </div>
+        <label>Tipo de serviço<input v-model.trim="payableForm.serviceTypeName" type="text" maxlength="100" required /></label>
+        <label>Nome do recebedor<input v-model.trim="payableForm.recipientName" type="text" maxlength="160" required /></label>
+        <div class="two-cols">
+          <label>Quantidade de pares<input v-model.number="payableForm.quantity" type="number" min="1" step="1" placeholder="1" required /></label>
+          <label>Valor combinado<input :value="money(payableForm.agreedAmount)" type="text" inputmode="numeric" required @input="currencyInput($event, payableForm, 'agreedAmount')" /></label>
+        </div>
+        <label>Valor total<input :value="money(payableForm.quantity * payableForm.agreedAmount)" type="text" readonly /></label>
+        <div class="two-cols">
+          <label>Status do pagamento<select v-model="payableForm.paymentStatus"><option v-for="(label, key) in payableStatusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+          <label>Data do pagamento<input v-model="payableForm.paymentDate" type="date" :required="payableForm.paymentStatus === 'paid'" :disabled="payableForm.paymentStatus !== 'paid'" @click="openDatePicker" /><small v-if="payableForm.paymentStatus === 'paid'">Obrigatória para contas pagas.</small></label>
+        </div>
+        <div class="modal-actions"><button type="button" class="button ghost" @click="payableModal = false">Cancelar</button><button class="button" :disabled="busy">Salvar conta</button></div>
+      </form>
+      <form v-else-if="orderModal" class="modal wide" @submit.prevent="saveOrder">
         <div class="modal-head">
           <div>
             <span class="eyebrow">Pedido</span>
@@ -2441,6 +2630,7 @@ async function saveServiceType() {
               type="number"
               min=".01"
               step=".01"
+              placeholder="1"
               required /></label
           ><label
             >Valor unitário<input
@@ -2500,7 +2690,7 @@ async function saveServiceType() {
               v-model.number="s.quantity"
               type="number"
               min="1"
-              placeholder="Qtd."
+              placeholder="1"
             /><input v-model="s.color" maxlength="120" placeholder="Cor (opcional)" /><button
               type="button"
               class="tiny-button danger-text"

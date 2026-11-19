@@ -442,13 +442,13 @@ export default defineEventHandler(async (event) => {
       page!.drawText("Cor", { x: colorX, y: gridTop - 10, size: 7, font: bold, color: charcoal });
       let rowTop = gridTop - headerHeight;
       sizes.forEach((size: any, index: number) => {
-        const rowHeight = gradeRowHeights[index];
+        const rowHeight = gradeRowHeights[index] ?? 18;
         page!.drawLine({ start: { x: gridX, y: rowTop }, end: { x: gridX + gridWidth, y: rowTop }, thickness: 0.3, color: subtleLine });
         page!.drawText(clean(size.size), { x: gridX + 8, y: rowTop - 10, size: 8, font: regular, color: charcoal });
         const quantity = String(size.quantity);
         const quantityWidth = regular.widthOfTextAtSize(quantity, 8);
         page!.drawText(quantity, { x: quantityColumnEnd - 8 - quantityWidth, y: rowTop - 10, size: 8, font: regular, color: charcoal });
-        gradeColorLines[index].forEach((line: string, lineIndex: number) => {
+        (gradeColorLines[index] ?? []).forEach((line: string, lineIndex: number) => {
           if (line) page!.drawText(line, { x: colorX, y: rowTop - 10 - lineIndex * 8, size: 7, font: regular, color: charcoal });
         });
         rowTop -= rowHeight;
